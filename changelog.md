@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Known Issues]
 - Please submit issues via [GitHub](https://github.com/maxdorx/MeshCentral-ScriptTask/issues).
 
+## [1.0.2] - 2026-10-22
+### Fixed
+- Remove the duplicate in-page ScriptTask heading and normalize the host heading size.
+- Preserve keyboard focus and caret position while filtering devices or results.
+- Require a script selection before showing or exporting result history.
+
 ## [1.0.1] - 2026-10-22
 ### Fixed
 - Match the proven MeshCentral Inventory plugin manifest and release-package format.

@@ -10,7 +10,7 @@ const root = path.resolve(__dirname, '..');
 test('manifest matches the MeshCentral server-plugin format', () => {
     const config = JSON.parse(fs.readFileSync(path.join(root, 'config.json'), 'utf8'));
     assert.equal(config.shortName, 'scripttask');
-    assert.equal(config.version, '1.0.1');
+    assert.equal(config.version, '1.0.2');
     assert.equal(config.hasAdminPanel, true);
     assert.equal(config.meshCentralCompat, '>=1.2.5');
     assert.equal(config.versionHistoryUrl, undefined);
@@ -108,4 +108,16 @@ test('server plugin page renders without the legacy user query parameter', async
     assert.ok(rendered);
     assert.match(rendered.view.replace(/\\/g, '/'), /views\/user$/);
     assert.equal(rendered.data.layout, false);
+});
+
+test('browser template parses and preserves filtering focus', () => {
+    const template = fs.readFileSync(path.join(root, 'views', 'user.handlebars'), 'utf8');
+    const script = template.match(/<script>([\s\S]*?)<\/script>/);
+    assert.ok(script, 'inline application script');
+    assert.doesNotThrow(() => new Function(script[1]));
+    assert.match(template, /id="deviceSearch"/);
+    assert.match(template, /id="resultSearch"/);
+    assert.match(template, /refocus\(focusId,caret\)/);
+    assert.match(template, /Select a script to view its results\./);
+    assert.doesNotMatch(template, /<h1>ScriptTask<\/h1>/);
 });

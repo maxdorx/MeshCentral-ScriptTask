@@ -150,8 +150,13 @@ module.exports.scripttask = function (parent) {
         if (enabled) {
             if (!heading.hasAttribute('data-scripttask-heading')) {
                 heading.setAttribute('data-scripttask-heading', heading.innerHTML);
+                heading.setAttribute('data-scripttask-heading-style', heading.getAttribute('style') || '');
             }
             heading.textContent = '';
+            heading.style.fontSize = '30px';
+            heading.style.lineHeight = '1.2';
+            heading.style.marginTop = '0';
+            heading.style.marginBottom = '0';
             var label = document.createElement('span');
             label.id = 'p43title';
             label.textContent = 'ScriptTask';
@@ -159,6 +164,9 @@ module.exports.scripttask = function (parent) {
         } else if (heading.hasAttribute('data-scripttask-heading')) {
             heading.innerHTML = heading.getAttribute('data-scripttask-heading');
             heading.removeAttribute('data-scripttask-heading');
+            var originalStyle = heading.getAttribute('data-scripttask-heading-style');
+            if (originalStyle) heading.setAttribute('style', originalStyle); else heading.removeAttribute('style');
+            heading.removeAttribute('data-scripttask-heading-style');
         }
     };
 
