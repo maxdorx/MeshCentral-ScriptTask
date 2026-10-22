@@ -4,7 +4,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Known Issues]
-- None. Please feel free to submit an issue via [GitHub](https://github.com/ryanblenis/MeshCentral-ScriptTask) if you find anything.
+- Please submit issues via [GitHub](https://github.com/maxdorx/MeshCentral-ScriptTask/issues).
+
+## [1.0.0] - 2026-10-22
+### Added
+- A standalone top-level ScriptTask workspace instead of a per-device plugin tab.
+- Fleet device selection with search, device-group filtering, online filtering, Run Now, and scheduling.
+- Unified results, schedules, variables, JSON output formatting, and server-generated CSV export.
+- Responsive light/dark UI and in-page dialogs compatible with MeshCentral 1.3.0.
+- MeshCentral plugin permissions for viewing, running, editing, and variable management.
+- Domain scoping and server-side validation of target-device rights.
+
+### Fixed
+- Legacy dialogs that no longer opened on current MeshCentral releases.
+- Duplicate schedule query conditions, single-node schedule creation, Bash normalization, and duplicate NeDB callbacks.
+- Script download path validation and agent job/script validation.
 
 ## [0.0.20] - 2025-01-08
 ### Fixed

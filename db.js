@@ -16,6 +16,16 @@ module.exports.CreateDB = function(meshserver) {
     obj.dbVersion = 1;
     
     obj.initFunctions = function () {
+        obj.domainFilter = function(domain) {
+            if (domain == null) domain = '';
+            if (domain === '') return { $or: [ { domain: '' }, { domain: { $exists: false } } ] };
+            return { domain: domain };
+        };
+
+        obj.withDomain = function(query, domain) {
+            return { $and: [ query, obj.domainFilter(domain) ] };
+        };
+
         obj.updateDBVersion = function(new_version) {
           return obj.scriptFile.updateOne({type: "db_version"}, { $set: {version: new_version} }, {upsert: true});
         };
@@ -29,7 +39,7 @@ module.exports.CreateDB = function(meshserver) {
             });
         };
 
-        obj.addScript = function(name, content, path, filetype) {
+        obj.addScript = function(name, content, path, filetype, domain) {
             if (path == null) path = "Shared"
             if (filetype == 'bash') content = content.split('\r\n').join('\n').split('\r').join('\n');
             var sObj = { 
@@ -38,25 +48,27 @@ module.exports.CreateDB = function(meshserver) {
                 name: name,
                 content: content,
                 contentHash: require('crypto').createHash('sha384').update(content).digest('hex'),
-                filetype: filetype
+                filetype: filetype,
+                domain: domain || ''
             };
             return obj.scriptFile.insertOne(sObj);
         };
         
-        obj.addFolder = function(name, path) {
+        obj.addFolder = function(name, path, domain) {
             var sObj = {
                 type: 'folder',
                 path: path,
-                name: name
+                name: name,
+                domain: domain || ''
             };
             return obj.scriptFile.insertOne(sObj);
         };
         
-        obj.getScriptTree = function() {
+        obj.getScriptTree = function(domain) {
             return obj.scriptFile.find(
-                { type:
+                obj.withDomain({ type:
                     { $in: [ 'script', 'folder' ] }
-                }
+                }, domain)
             ).sort(
                 { path: 1, type: 1, name: 1 }
             ).project(
@@ -68,7 +80,7 @@ module.exports.CreateDB = function(meshserver) {
             id = formatId(id);
             if (args.type == 'script' && args.content !== null) { 
                 if (args.filetype == 'bash') {
-                    args.content = args.content = split('\r\n').join('\n').split('\r').join('\n');
+                    args.content = args.content.split('\r\n').join('\n').split('\r').join('\n');
                 }
                 args.contentHash = require('crypto').createHash('sha384').update(args.content).digest('hex');
             }
@@ -78,20 +90,33 @@ module.exports.CreateDB = function(meshserver) {
             id = formatId(id);
             return obj.scriptFile.deleteOne( { _id: id } );
         };
-        obj.deleteByPath = function(path) {
-          return obj.scriptFile.deleteMany( { path: path, type: { $in: ['script', 'folder'] } } );
+        obj.deleteByPath = function(path, domain) {
+          var query = { path: path, type: { $in: ['script', 'folder'] } };
+          return obj.scriptFile.deleteMany(domain == null ? query : obj.withDomain(query, domain));
         };
-        obj.deleteSchedulesForScript = function(id) {
+        obj.deleteSchedulesForScript = function(id, domain) {
             id = formatId(id);
-            return obj.scriptFile.deleteMany( { type: 'jobSchedule', scriptId: id } );
+            var query = { type: 'jobSchedule', scriptId: id };
+            return obj.scriptFile.deleteMany(domain == null ? query : obj.withDomain(query, domain));
         };
-        obj.getByPath = function(path) {
-          return obj.scriptFile.find( { type: { $in: [ 'script', 'folder' ] }, path: path }).toArray();
+        obj.deletePendingJobsForScript = function(id, domain) {
+            id = formatId(id);
+            var query = { type: 'job', scriptId: id, completeTime: null };
+            return obj.scriptFile.deleteMany(domain == null ? query : obj.withDomain(query, domain));
+        };
+        obj.getByPath = function(path, domain) {
+          var query = { type: { $in: [ 'script', 'folder' ] }, path: path };
+          return obj.scriptFile.find(domain == null ? query : obj.withDomain(query, domain)).toArray();
         };
         obj.get = function(id) {
             if (id == null || id == 'null') return new Promise(function(resolve, reject) { resolve([]); });
             id = formatId(id);
             return obj.scriptFile.find( { _id: id } ).toArray();
+        };
+        obj.getForDomain = function(id, domain) {
+            if (id == null || id == 'null') return Promise.resolve([]);
+            id = formatId(id);
+            return obj.scriptFile.find(obj.withDomain({ _id: id }, domain)).toArray();
         };
         obj.addJob = function(passedObj) {
           var nowTime = Math.floor(new Date() / 1000);
@@ -134,13 +159,9 @@ module.exports.CreateDB = function(meshserver) {
             return obj.scriptFile.find( { 
                 type: 'jobSchedule',
                 // startAt: { $gte: nowTime },
-                $or: [
-                    { endAt: null },
-                    { endAt: { $lte: nowTime } }
-                ],
-                $or: [
-                    { nextRun: null }, 
-                    { nextRun: { $lte: (nowTime + 60) } } // check a minute into the future
+                $and: [
+                    { $or: [ { endAt: null }, { endAt: { $gte: nowTime } } ] },
+                    { $or: [ { nextRun: null }, { nextRun: { $lte: (nowTime + 60) } } ] }
                 ],
                 ...scheduleIdLimiter
             }).toArray();
@@ -168,26 +189,39 @@ module.exports.CreateDB = function(meshserver) {
               ]
           }).toArray();
         };
-        obj.getJobNodeHistory = function(nodeId) {
+        obj.getPendingJobForNodeScript = function(nodeId, scriptId) {
+            return obj.scriptFile.find({ type: 'job', node: nodeId, scriptId: formatId(scriptId), completeTime: null }).limit(1).toArray();
+        };
+        obj.getJobNodeHistory = function(nodeId, domain) {
             return obj.scriptFile.find( { 
                 type: 'job', 
                 node: nodeId,
-            }).sort({ queueTime: -1 }).limit(200).toArray();
+                ...(domain == null ? {} : obj.domainFilter(domain))
+            }).sort({ queueTime: -1 }).limit(500).toArray();
         };
-        obj.getJobScriptHistory = function(scriptId) {
+        obj.getJobScriptHistory = function(scriptId, domain) {
             return obj.scriptFile.find( { 
                 type: 'job', 
                 scriptId: scriptId,
-            }).sort({ completeTime: -1, queueTime: -1 }).limit(200).toArray();
+                ...(domain == null ? {} : obj.domainFilter(domain))
+            }).sort({ completeTime: -1, queueTime: -1 }).limit(500).toArray();
+        };
+        obj.getJobHistory = function(domain, limit) {
+            return obj.scriptFile.find(obj.withDomain({ type: 'job' }, domain))
+                .sort({ completeTime: -1, queueTime: -1 }).limit(limit || 1000).toArray();
         };
         obj.updateScriptJobName = function(scriptId, scriptName) {
             return obj.scriptFile.updateMany({ type: 'job', scriptId: scriptId }, { $set: { scriptName: scriptName } });    
         };
-        obj.getJobSchedulesForScript = function(scriptId) {
-            return obj.scriptFile.find( { type: 'jobSchedule', scriptId: scriptId } ).toArray();
+        obj.getJobSchedulesForScript = function(scriptId, domain) {
+            var query = { type: 'jobSchedule', scriptId: scriptId };
+            return obj.scriptFile.find(domain == null ? query : obj.withDomain(query, domain)).toArray();
         };
         obj.getJobSchedulesForNode = function (nodeId) {
             return obj.scriptFile.find( { type: 'jobSchedule', node: nodeId } ).toArray();
+        };
+        obj.getJobSchedules = function(domain) {
+            return obj.scriptFile.find(obj.withDomain({ type: 'jobSchedule' }, domain)).sort({ startAt: -1 }).toArray();
         };
         obj.getIncompleteJobsForSchedule = function (schedId) {
             return obj.scriptFile.find( { type: 'job', jobSchedule: schedId, completeTime: null } ).toArray();
@@ -200,17 +234,18 @@ module.exports.CreateDB = function(meshserver) {
             var oldTime = nowTime - (86400 * 90); // 90 days
             return obj.scriptFile.deleteMany( { type: 'job', completeTime: { $lte: oldTime } } );
         };
-        obj.addVariable = function(name, scope, scopeTarget, value) {
+        obj.addVariable = function(name, scope, scopeTarget, value, domain) {
             var vObj = { 
                 type: 'variable',
                 name: name,
                 scope: scope,
                 scopeTarget: scopeTarget,
-                value: value
+                value: value,
+                domain: domain || ''
             };
             return obj.scriptFile.insertOne(vObj);
         };
-        obj.getVariables = function(limiters) {
+        obj.getVariables = function(limiters, domain) {
             if (limiters != null) {
                 var find = { 
                     type: 'variable',
@@ -234,18 +269,23 @@ module.exports.CreateDB = function(meshserver) {
                         }
                     ]
                 };
-                return obj.scriptFile.find(find).sort({ name: 1 }).toArray();
+                return obj.scriptFile.find(domain == null ? find : obj.withDomain(find, domain)).sort({ name: 1 }).toArray();
             }
             else {
-                return obj.scriptFile.find({ type: 'variable' }).sort({ name: 1 }).toArray();
+                var query = { type: 'variable' };
+                return obj.scriptFile.find(domain == null ? query : obj.withDomain(query, domain)).sort({ name: 1 }).toArray();
             }
         };
         obj.checkDefaults = function() {
             obj.scriptFile.find( { type: 'folder', name: 'Shared', path: 'Shared' } ).toArray()
             .then(found => {
-              if (found.length == 0) obj.addFolder('Shared', 'Shared');
+              if (found.length == 0) obj.addFolder('Shared', 'Shared', '');
             })
             .catch(e => { console.log('PLUGIN: ScriptTask: Default folder check failed. Error was: ', e); });
+        };
+        obj.ensureDomainDefaults = function(domain) {
+            return obj.scriptFile.find(obj.withDomain({ type: 'folder', name: 'Shared', path: 'Shared' }, domain)).toArray()
+                .then(function(found) { if (found.length == 0) return obj.addFolder('Shared', 'Shared', domain); });
         };
         
         obj.checkDefaults();
@@ -264,7 +304,7 @@ module.exports.CreateDB = function(meshserver) {
               // Check if we need to reset indexes
               var indexesByName = {}, indexCount = 0;
               for (var i in indexes) { indexesByName[indexes[i].name] = indexes[i]; indexCount++; }
-              if ((indexCount != 6) || (indexesByName['ScriptName1'] == null) || (indexesByName['ScriptPath1'] == null) || (indexesByName['JobTime1'] == null) || (indexesByName['JobNode1'] == null) || (indexesByName['JobScriptID1'] == null)) {
+              if ((indexCount != 7) || (indexesByName['ScriptName1'] == null) || (indexesByName['ScriptPath1'] == null) || (indexesByName['JobTime1'] == null) || (indexesByName['JobNode1'] == null) || (indexesByName['JobScriptID1'] == null) || (indexesByName['Domain1'] == null)) {
                   // Reset all indexes
                   console.log('Resetting plugin (ScriptTask) indexes...');
                   obj.scriptFile.dropIndexes(function (err) {
@@ -273,6 +313,7 @@ module.exports.CreateDB = function(meshserver) {
                       obj.scriptFile.createIndex({ queueTime: 1 }, { name: 'JobTime1' });
                       obj.scriptFile.createIndex({ node: 1 }, { name: 'JobNode1' });
                       obj.scriptFile.createIndex({ scriptId: 1 }, { name: 'JobScriptID1' });
+                      obj.scriptFile.createIndex({ domain: 1 }, { name: 'Domain1' });
                   }); 
               }
           });
@@ -299,6 +340,7 @@ module.exports.CreateDB = function(meshserver) {
             obj.scriptFilex.ensureIndex({ fieldName: 'queueTime' });
             obj.scriptFilex.ensureIndex({ fieldName: 'node' });
             obj.scriptFilex.ensureIndex({ fieldName: 'scriptId' });
+            obj.scriptFilex.ensureIndex({ fieldName: 'domain' });
         }
         obj.scriptFile = new NEMongo(obj.scriptFilex);
         formatId = function(id) { return id; };
