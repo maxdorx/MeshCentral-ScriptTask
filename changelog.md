@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Known Issues]
 - Please submit issues via [GitHub](https://github.com/maxdorx/MeshCentral-ScriptTask/issues).
 
+## [1.0.6] - 2026-10-22
+### Improved
+- Compact the selected-script header and primary navigation to preserve working space.
+- Combine device search, group, online, selection, and count controls into one toolbar.
+- Let the device list fill the available panel height and reduce row padding for denser fleet views.
+- Show more result rows in the available space without changing output detail or retention.
+
 ## [1.0.5] - 2026-10-22
 ### Fixed
 - Keep desktop scrolling inside the plugin panels so the toolbar and MeshCentral heading remain visible.
