@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Known Issues]
 - Please submit issues via [GitHub](https://github.com/maxdorx/MeshCentral-ScriptTask/issues).
 
+## [1.0.3] - 2026-10-22
+### Fixed
+- Synchronize the embedded interface with MeshCentral's active theme stylesheet and Bootstrap color variables.
+- Follow live theme changes for backgrounds, panels, controls, borders, text, status colors, and accent contrast.
+- Use the parent MeshCentral font and retain standalone colors only as compatibility fallbacks.
+
 ## [1.0.2] - 2026-10-22
 ### Fixed
 - Remove the duplicate in-page ScriptTask heading and normalize the host heading size.

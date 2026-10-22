@@ -10,7 +10,7 @@ const root = path.resolve(__dirname, '..');
 test('manifest matches the MeshCentral server-plugin format', () => {
     const config = JSON.parse(fs.readFileSync(path.join(root, 'config.json'), 'utf8'));
     assert.equal(config.shortName, 'scripttask');
-    assert.equal(config.version, '1.0.2');
+    assert.equal(config.version, '1.0.3');
     assert.equal(config.hasAdminPanel, true);
     assert.equal(config.meshCentralCompat, '>=1.2.5');
     assert.equal(config.versionHistoryUrl, undefined);
@@ -120,4 +120,17 @@ test('browser template parses and preserves filtering focus', () => {
     assert.match(template, /refocus\(focusId,caret\)/);
     assert.match(template, /Select a script to view its results\./);
     assert.doesNotMatch(template, /<h1>ScriptTask<\/h1>/);
+});
+
+test('browser template follows the active MeshCentral theme', () => {
+    const template = fs.readFileSync(path.join(root, 'views', 'user.handlebars'), 'utf8');
+    assert.match(template, /id="scriptTaskTheme"/);
+    assert.match(template, /getElementById\('theme-stylesheet'\)/);
+    assert.match(template, /parent\.getComputedStyle/);
+    assert.match(template, /--bs-body-bg/);
+    assert.match(template, /--bs-body-color/);
+    assert.match(template, /--bs-primary/);
+    assert.match(template, /new MutationObserver\(update\)/);
+    assert.match(template, /watchTheme\(\);refresh\(\)/);
+    assert.doesNotMatch(template, /prefers-color-scheme/);
 });
