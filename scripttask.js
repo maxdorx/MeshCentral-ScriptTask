@@ -17,8 +17,16 @@ module.exports.scripttask = function (parent) {
     obj.VIEWS = __dirname + '/views/';
     obj.exports = [
         'onWebUIStartupEnd',
+        'installNavigation',
+        'trackPluginFrame',
+        'fitScriptTaskFrame',
+        'setScriptTaskHostChrome',
+        'setScriptTaskUrlMarker',
+        'setScriptTaskHeading',
+        'setScriptTaskSelected',
+        'openScriptTask',
+        'getScriptTaskFrame',
         'goPageStart',
-        'goPageEnd',
         'resizeContent',
         'historyData',
         'variableData',
@@ -30,76 +38,202 @@ module.exports.scripttask = function (parent) {
         'malix_triggerOption'
     ];
 
-    // ScriptTask is a fleet tool, so expose it as a first-class MeshCentral page.
-    // These functions are serialized by MeshCentral and run in the browser.
+    // ScriptTask is a fleet tool. Use MeshCentral's shared server-plugin page
+    // (view 43), just like the Inventory plugin, instead of creating a private
+    // page number that the host router does not know about.
     obj.onWebUIStartupEnd = function() {
-        if (document.getElementById('MainMenuScriptTask') != null) return;
-        var pageId = 70;
-        while (document.getElementById('p' + pageId) != null && pageId < 99) pageId++;
-        pluginHandler.scripttask.pageId = pageId;
+        pluginHandler.scripttask.installNavigation();
+        try {
+            var params = new URLSearchParams(window.location.search);
+            if (params.get('viewmode') === '43' && params.get('scripttaskplugin') === '1') {
+                pluginHandler.scripttask.openScriptTask();
+            }
+        } catch (e) { }
+    };
 
-        var menu = document.getElementById('MainMenuSpan');
-        if (menu && menu.rows && menu.rows[0]) {
+    obj.installNavigation = function() {
+        if (document.getElementById('MainMenuScriptTask') == null) {
+            var row = document.querySelector('#MainMenuSpan tr');
+            if (row) {
             var cell = document.createElement('td');
             cell.id = 'MainMenuScriptTask';
             cell.className = 'topbar_td style3x';
             cell.tabIndex = 0;
             cell.textContent = 'ScriptTask';
             cell.title = 'Run and schedule scripts across devices';
-            cell.onmouseup = function(e) { go(pluginHandler.scripttask.pageId, e); };
-            cell.onkeypress = function(e) { if (e.key == 'Enter') go(pluginHandler.scripttask.pageId, e); };
-            menu.rows[0].insertBefore(cell, menu.rows[0].lastElementChild);
+                cell.onmouseup = function() { return pluginHandler.scripttask.openScriptTask(); };
+                cell.onkeypress = function(e) { if (e.key == 'Enter') pluginHandler.scripttask.openScriptTask(); };
+                var devicesCell = document.getElementById('MainMenuMyDevices');
+                row.insertBefore(cell, devicesCell && devicesCell.parentNode === row ? devicesCell.nextSibling : row.querySelector('.topbar_td_end'));
+            }
         }
 
-        var leftMenu = document.querySelector('#page_leftbar nav');
-        if (leftMenu) {
-            var link = document.createElement('a');
-            link.id = 'LeftMenuScriptTask';
-            link.className = 'nav-link text-center text-white';
-            link.href = '#';
-            link.title = 'ScriptTask';
-            link.innerHTML = '<i class="fa-solid fa-terminal me-2"></i>';
-            link.onclick = function(e) { e.preventDefault(); go(pluginHandler.scripttask.pageId, e); };
-            leftMenu.appendChild(link);
+        if (document.getElementById('LeftMenuScriptTask') == null) {
+            var devicesItem = document.getElementById('LeftMenuMyDevices');
+            if (devicesItem && devicesItem.parentNode) {
+                var item = devicesItem.cloneNode(false);
+                item.id = 'LeftMenuScriptTask';
+                item.title = 'ScriptTask';
+                item.className = devicesItem.className.replace(/lbbuttonsel/g, '').replace(/active/g, '');
+                item.removeAttribute('data-target');
+                item.removeAttribute('onmouseup');
+                item.removeAttribute('onkeypress');
+                item.innerHTML = '<i class="fa-solid fa-terminal me-2"></i>';
+                item.onclick = function(e) { if (e) e.preventDefault(); return pluginHandler.scripttask.openScriptTask(); };
+                devicesItem.parentNode.insertBefore(item, devicesItem.nextSibling);
+            }
         }
+        pluginHandler.scripttask.trackPluginFrame();
+    };
 
-        var host = document.getElementById('column_l');
-        if (host) {
-            var panel = document.createElement('div');
-            panel.id = 'p' + pageId;
-            panel.style.display = 'none';
-            panel.style.height = 'calc(100vh - 150px)';
-            panel.style.minHeight = '620px';
-            panel.innerHTML = '<iframe id="pluginIframeScriptTask" title="ScriptTask" style="width:100%;height:100%;border:0;background:transparent" src="pluginadmin.ashx?pin=scripttask&user=1&standalone=1"></iframe>';
-            host.appendChild(panel);
+    obj.setScriptTaskUrlMarker = function(enabled) {
+        try {
+            if (typeof urlargs === 'object' && urlargs != null) {
+                if (enabled) urlargs.scripttaskplugin = '1';
+                else delete urlargs.scripttaskplugin;
+            }
+            var url = new URL(window.location.href);
+            if (enabled) {
+                url.searchParams.set('viewmode', '43');
+                url.searchParams.set('scripttaskplugin', '1');
+            } else {
+                url.searchParams.delete('scripttaskplugin');
+            }
+            window.history.replaceState({}, document.title, url.pathname + url.search + url.hash);
+        } catch (e) { }
+        if (!enabled) pluginHandler.scripttask.setScriptTaskSelected(false);
+    };
+
+    obj.setScriptTaskHostChrome = function(enabled) {
+        var submenu = document.getElementById('ServerSubMenuSpan');
+        var content = document.getElementById('column_l');
+        if (enabled) {
+            if (submenu && !submenu.hasAttribute('data-scripttask-display')) {
+                submenu.setAttribute('data-scripttask-display', submenu.style.display || '');
+            }
+            if (submenu) submenu.style.setProperty('display', 'none', 'important');
+            if (content && !content.hasAttribute('data-scripttask-room')) {
+                content.setAttribute('data-scripttask-room', content.classList.contains('room4submenu') ? '1' : '0');
+            }
+            if (content) content.classList.remove('room4submenu');
+            return;
         }
+        if (submenu && submenu.hasAttribute('data-scripttask-display')) {
+            var display = submenu.getAttribute('data-scripttask-display');
+            if (display) submenu.style.display = display; else submenu.style.removeProperty('display');
+            submenu.removeAttribute('data-scripttask-display');
+        }
+        if (content && content.hasAttribute('data-scripttask-room')) {
+            content.classList.toggle('room4submenu', content.getAttribute('data-scripttask-room') === '1');
+            content.removeAttribute('data-scripttask-room');
+        }
+    };
+
+    obj.setScriptTaskSelected = function(enabled) {
+        var top = document.getElementById('MainMenuScriptTask');
+        if (top) {
+            top.classList.toggle('style3sel', enabled === true);
+            if (!enabled) top.classList.remove('fullselect', 'semiselect');
+        }
+        var left = document.getElementById('LeftMenuScriptTask');
+        if (left) {
+            left.classList.toggle('active', enabled === true);
+            left.classList.toggle('lbbuttonsel', enabled === true);
+            if (!enabled) left.classList.remove('lbbuttonsel2');
+        }
+    };
+
+    obj.setScriptTaskHeading = function(enabled) {
+        var title = document.getElementById('p43title');
+        var heading = title && title.parentNode;
+        if (!heading) return;
+        if (enabled) {
+            if (!heading.hasAttribute('data-scripttask-heading')) {
+                heading.setAttribute('data-scripttask-heading', heading.innerHTML);
+            }
+            heading.textContent = '';
+            var label = document.createElement('span');
+            label.id = 'p43title';
+            label.textContent = 'ScriptTask';
+            heading.appendChild(label);
+        } else if (heading.hasAttribute('data-scripttask-heading')) {
+            heading.innerHTML = heading.getAttribute('data-scripttask-heading');
+            heading.removeAttribute('data-scripttask-heading');
+        }
+    };
+
+    obj.fitScriptTaskFrame = function(enabled) {
+        var frame = document.getElementById('p43iframe');
+        if (!frame) return;
+        if (enabled) {
+            if (!frame.hasAttribute('data-scripttask-height')) frame.setAttribute('data-scripttask-height', frame.style.height || '');
+            if (!frame.hasAttribute('data-scripttask-max-height')) frame.setAttribute('data-scripttask-max-height', frame.style.maxHeight || '');
+            var height = Math.max(240, Math.floor(window.innerHeight - Math.max(0, frame.getBoundingClientRect().top))) + 'px';
+            if (frame.style.height !== height) frame.style.height = height;
+            if (frame.style.maxHeight !== height) frame.style.maxHeight = height;
+            return;
+        }
+        if (frame.hasAttribute('data-scripttask-height')) {
+            frame.style.height = frame.getAttribute('data-scripttask-height');
+            frame.style.maxHeight = frame.getAttribute('data-scripttask-max-height');
+            frame.removeAttribute('data-scripttask-height');
+            frame.removeAttribute('data-scripttask-max-height');
+        }
+    };
+
+    obj.trackPluginFrame = function() {
+        var frame = document.getElementById('p43iframe');
+        if (!frame || frame.getAttribute('data-scripttask-watch') === '1') return;
+        frame.setAttribute('data-scripttask-watch', '1');
+        window.addEventListener('resize', function() {
+            var src = frame.getAttribute('src') || '';
+            if (src.indexOf('pin=scripttask') >= 0) pluginHandler.scripttask.fitScriptTaskFrame(true);
+        });
+        try {
+            new MutationObserver(function() {
+                var src = frame.getAttribute('src') || '';
+                if (src.indexOf('pin=scripttask') < 0) {
+                    pluginHandler.scripttask.setScriptTaskHostChrome(false);
+                    pluginHandler.scripttask.fitScriptTaskFrame(false);
+                    pluginHandler.scripttask.setScriptTaskUrlMarker(false);
+                    pluginHandler.scripttask.setScriptTaskHeading(false);
+                } else {
+                    window.setTimeout(function() { pluginHandler.scripttask.fitScriptTaskFrame(true); }, 0);
+                }
+            }).observe(frame, { attributes: true, attributeFilter: ['src', 'style'] });
+        } catch (e) { }
+    };
+
+    obj.openScriptTask = function() {
+        pluginHandler.scripttask.setScriptTaskUrlMarker(true);
+        var frame = document.getElementById('p43iframe');
+        var src = frame ? (frame.getAttribute('src') || '') : '';
+        if (src.indexOf('pin=scripttask') >= 0) go(43);
+        else goPlugin('scripttask', 'ScriptTask');
+        pluginHandler.scripttask.setScriptTaskUrlMarker(true);
+        pluginHandler.scripttask.setScriptTaskHostChrome(true);
+        window.setTimeout(function() {
+            pluginHandler.scripttask.setScriptTaskHostChrome(true);
+            pluginHandler.scripttask.fitScriptTaskFrame(true);
+            pluginHandler.scripttask.setScriptTaskHeading(true);
+            pluginHandler.scripttask.setScriptTaskSelected(true);
+        }, 0);
+        return false;
+    };
+
+    obj.getScriptTaskFrame = function() {
+        var frame = document.getElementById('p43iframe');
+        if (frame && String(frame.getAttribute('src') || '').indexOf('pin=scripttask') >= 0) return frame;
+        return document.getElementById('pluginIframeScriptTask');
     };
 
     obj.goPageStart = function(x) {
-        var pageId = pluginHandler.scripttask.pageId || 70;
-        var panel = document.getElementById('p' + pageId);
-        if (panel && x != pageId) panel.style.display = 'none';
-        var top = document.getElementById('MainMenuScriptTask');
-        if (top && x != pageId) { top.classList.remove('fullselect'); top.classList.remove('semiselect'); }
-        var left = document.getElementById('LeftMenuScriptTask');
-        if (left && x != pageId) { left.classList.remove('lbbuttonsel'); left.classList.remove('lbbuttonsel2'); }
-    };
-
-    obj.goPageEnd = function(x) {
-        var pageId = pluginHandler.scripttask.pageId || 70;
-        if (x != pageId) return;
-        var panel = document.getElementById('p' + pageId);
-        if (panel) panel.style.display = '';
-        var top = document.getElementById('MainMenuScriptTask');
-        if (top) top.classList.add('fullselect');
-        var left = document.getElementById('LeftMenuScriptTask');
-        if (left) left.classList.add('lbbuttonsel');
-        var submenus = ['MainSubMenuSpan', 'MeshSubMenuSpan', 'EventsSubMenuSpan', 'UserSubMenuSpan', 'UsersSubMenuSpan', 'ServerSubMenuSpan'];
-        for (var i = 0; i < submenus.length; i++) {
-            var el = document.getElementById(submenus[i]);
-            if (el) el.style.display = 'none';
-        }
-        document.title = 'ScriptTask - MeshCentral';
+        if (x == 43) return;
+        pluginHandler.scripttask.setScriptTaskHostChrome(false);
+        pluginHandler.scripttask.fitScriptTaskFrame(false);
+        pluginHandler.scripttask.setScriptTaskUrlMarker(false);
+        pluginHandler.scripttask.setScriptTaskHeading(false);
+        pluginHandler.scripttask.setScriptTaskSelected(false);
     };
     
     obj.malix_triggerOption = function(selectElem) {
@@ -130,8 +264,7 @@ module.exports.scripttask = function (parent) {
     
     // may not be needed, saving for later. Can be called to resize iFrame
     obj.resizeContent = function() {
-        var iFrame = document.getElementById('pluginIframeScriptTask');
-        if (iFrame != null) iFrame.style.height = '100%';
+        pluginHandler.scripttask.fitScriptTaskFrame(true);
     };
     
     obj.queueRun = async function() {
@@ -298,7 +431,6 @@ module.exports.scripttask = function (parent) {
                 res.sendFile(includeFile);
                 return;
             }
-            if (req.query.user != 1) { res.sendStatus(401); return; }
             if (req.query.dl != null) { obj.downloadFile(req, res, user); return; }
             if (req.query.report == 'csv') {
                 var domain = obj.getDomainId(user);
@@ -320,7 +452,9 @@ module.exports.scripttask = function (parent) {
                 }).catch(function() { res.sendStatus(500); });
                 return;
             }
-            res.render(obj.VIEWS + 'user', { scriptTree: '[]' });
+            res.setHeader('Cache-Control', 'no-store');
+            res.setHeader('X-Content-Type-Options', 'nosniff');
+            res.render(obj.VIEWS + 'user', { layout: false, scriptTree: '[]' });
         }).catch(function() { res.sendStatus(500); });
     };
     
@@ -338,22 +472,22 @@ module.exports.scripttask = function (parent) {
     };
 
     obj.dashboardData = function(message) {
-        var frame = document.getElementById('pluginIframeScriptTask');
+        var frame = pluginHandler.scripttask.getScriptTaskFrame();
         if (frame && frame.contentWindow && typeof frame.contentWindow.scriptTaskReceive == 'function') frame.contentWindow.scriptTaskReceive('dashboard', message.event);
     };
 
     obj.scriptData = function(message) {
-        var frame = document.getElementById('pluginIframeScriptTask');
+        var frame = pluginHandler.scripttask.getScriptTaskFrame();
         if (frame && frame.contentWindow && typeof frame.contentWindow.scriptTaskReceive == 'function') frame.contentWindow.scriptTaskReceive('script', message.event);
     };
 
     obj.operationResult = function(message) {
-        var frame = document.getElementById('pluginIframeScriptTask');
+        var frame = pluginHandler.scripttask.getScriptTaskFrame();
         if (frame && frame.contentWindow && typeof frame.contentWindow.scriptTaskReceive == 'function') frame.contentWindow.scriptTaskReceive('operation', message.event);
     };
 
     obj.refreshData = function() {
-        var frame = document.getElementById('pluginIframeScriptTask');
+        var frame = pluginHandler.scripttask.getScriptTaskFrame();
         if (frame && frame.contentWindow && typeof frame.contentWindow.scriptTaskRefresh == 'function') frame.contentWindow.scriptTaskRefresh();
     };
     

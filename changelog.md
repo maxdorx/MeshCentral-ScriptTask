@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Known Issues]
 - Please submit issues via [GitHub](https://github.com/maxdorx/MeshCentral-ScriptTask/issues).
 
+## [1.0.1] - 2026-10-22
+### Fixed
+- Match the proven MeshCentral Inventory plugin manifest and release-package format.
+- Use MeshCentral's shared server-plugin page for the top-level ScriptTask tab.
+- Allow the server plugin page to render through `goPlugin` without the legacy per-device query parameter.
+- Declare the tested MeshCentral 1.2.5 compatibility floor and provide an installer-ready ZIP.
+
 ## [1.0.0] - 2026-10-22
 ### Added
 - A standalone top-level ScriptTask workspace instead of a per-device plugin tab.

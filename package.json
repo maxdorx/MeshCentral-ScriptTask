@@ -1,0 +1,9 @@
+{
+  "name": "meshcentral-scripttask",
+  "version": "1.0.1",
+  "private": true,
+  "scripts": {
+    "test": "node --test --test-isolation=none",
+    "package": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package.ps1"
+  }
+}

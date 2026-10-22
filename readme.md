@@ -2,11 +2,11 @@
 
 ScriptTask is a fleet-wide script runner for [MeshCentral](https://github.com/Ylianst/MeshCentral). It stores PowerShell, Windows BAT, and Bash scripts centrally, runs them through MeshAgent, schedules recurring work, and keeps the returned output for audit and export.
 
-Version 1.0 modernizes the original plugin for MeshCentral 1.3.0. The execution engine, agent cache, schedules, variables, and existing database remain compatible; the browser workflow is now a standalone **ScriptTask** tab instead of a page nested under one device.
+Version 1.0 modernizes the original plugin for current MeshCentral releases. The execution engine, agent cache, schedules, variables, and existing database remain compatible; the browser workflow is now a standalone **ScriptTask** tab instead of a page nested under one device.
 
 ## Requirements
 
-- MeshCentral 1.3.0 or newer
+- MeshCentral 1.2.5 or newer
 - Plugins enabled in MeshCentral:
 
 ```json
