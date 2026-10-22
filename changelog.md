@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Known Issues]
 - Please submit issues via [GitHub](https://github.com/maxdorx/MeshCentral-ScriptTask/issues).
 
+## [1.0.5] - 2026-10-22
+### Fixed
+- Keep desktop scrolling inside the plugin panels so the toolbar and MeshCentral heading remain visible.
+- Paginate result history with 25, 50, or 100 rows per page and show newest activity first.
+- Collapse long command output by default while keeping a useful result summary visible.
+
 ## [1.0.4] - 2026-10-22
 ### Fixed
 - Use a version-specific installer ZIP so GitHub's raw-file cache cannot serve an older plugin build for a newer manifest.

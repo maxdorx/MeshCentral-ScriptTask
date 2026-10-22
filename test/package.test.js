@@ -10,11 +10,11 @@ const root = path.resolve(__dirname, '..');
 test('manifest matches the MeshCentral server-plugin format', () => {
     const config = JSON.parse(fs.readFileSync(path.join(root, 'config.json'), 'utf8'));
     assert.equal(config.shortName, 'scripttask');
-    assert.equal(config.version, '1.0.4');
+    assert.equal(config.version, '1.0.5');
     assert.equal(config.hasAdminPanel, true);
     assert.equal(config.meshCentralCompat, '>=1.2.5');
     assert.equal(config.versionHistoryUrl, undefined);
-    assert.equal(config.downloadUrl, 'https://raw.githubusercontent.com/maxdorx/MeshCentral-ScriptTask/scripttask-current/release-assets/MeshCentral-ScriptTask-1.0.4.zip');
+    assert.equal(config.downloadUrl, 'https://raw.githubusercontent.com/maxdorx/MeshCentral-ScriptTask/scripttask-current/release-assets/MeshCentral-ScriptTask-1.0.5.zip');
 });
 
 test('release ZIP has the plugin directory expected by MeshCentral', () => {
@@ -43,7 +43,7 @@ test('release ZIP has the plugin directory expected by MeshCentral', () => {
 
 test('release channel includes an immutable versioned installer ZIP', () => {
     const current = fs.readFileSync(path.join(root, 'release-assets', 'MeshCentral-ScriptTask.zip'));
-    const versioned = fs.readFileSync(path.join(root, 'release-assets', 'MeshCentral-ScriptTask-1.0.4.zip'));
+    const versioned = fs.readFileSync(path.join(root, 'release-assets', 'MeshCentral-ScriptTask-1.0.5.zip'));
     assert.deepEqual(versioned, current);
 });
 
@@ -139,4 +139,15 @@ test('browser template follows the active MeshCentral theme', () => {
     assert.match(template, /new MutationObserver\(update\)/);
     assert.match(template, /watchTheme\(\);refresh\(\)/);
     assert.doesNotMatch(template, /prefers-color-scheme/);
+});
+
+test('results use contained scrolling, pagination, and collapsed output', () => {
+    const template = fs.readFileSync(path.join(root, 'views', 'user.handlebars'), 'utf8');
+    assert.match(template, /html,body\{height:100%;min-height:0;margin:0;overflow:hidden\}/);
+    assert.match(template, /\.view\.results\{display:flex;flex-direction:column;overflow:hidden\}/);
+    assert.match(template, /class="tablewrap"/);
+    assert.match(template, /resultPageSize:50/);
+    assert.match(template, /\[25,50,100\]/);
+    assert.match(template, /\.sort\(function\(a,b\)\{return resultTime\(b\)-resultTime\(a\)\}\)/);
+    assert.match(template, /<details class="resultdetails">/);
 });
