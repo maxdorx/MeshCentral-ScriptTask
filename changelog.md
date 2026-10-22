@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Known Issues]
 - Please submit issues via [GitHub](https://github.com/maxdorx/MeshCentral-ScriptTask/issues).
 
+## [1.0.4] - 2026-10-22
+### Fixed
+- Use a version-specific installer ZIP so GitHub's raw-file cache cannot serve an older plugin build for a newer manifest.
+
 ## [1.0.3] - 2026-10-22
 ### Fixed
 - Synchronize the embedded interface with MeshCentral's active theme stylesheet and Bootstrap color variables.

@@ -9,7 +9,8 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
 }
 
 $releaseDir = Join-Path $project "release-assets"
-$archive = Join-Path $releaseDir "MeshCentral-ScriptTask.zip"
+$archive = Join-Path $releaseDir ("MeshCentral-ScriptTask-" + $Version + ".zip")
+$latestArchive = Join-Path $releaseDir "MeshCentral-ScriptTask.zip"
 New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
 
 $resolvedProject = (Resolve-Path -LiteralPath $project).Path.TrimEnd([char[]]'\/')
@@ -19,6 +20,9 @@ if (-not $resolvedRelease.StartsWith($resolvedProject + [IO.Path]::DirectorySepa
 }
 if (Test-Path -LiteralPath $archive) {
     Remove-Item -LiteralPath $archive -Force
+}
+if (Test-Path -LiteralPath $latestArchive) {
+    Remove-Item -LiteralPath $latestArchive -Force
 }
 
 $rootFiles = @(
@@ -61,4 +65,5 @@ try {
     $stream.Dispose()
 }
 
-Write-Output "Created $archive for ScriptTask $Version"
+Copy-Item -LiteralPath $archive -Destination $latestArchive
+Write-Output "Created $archive and $latestArchive for ScriptTask $Version"

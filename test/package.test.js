@@ -10,11 +10,11 @@ const root = path.resolve(__dirname, '..');
 test('manifest matches the MeshCentral server-plugin format', () => {
     const config = JSON.parse(fs.readFileSync(path.join(root, 'config.json'), 'utf8'));
     assert.equal(config.shortName, 'scripttask');
-    assert.equal(config.version, '1.0.3');
+    assert.equal(config.version, '1.0.4');
     assert.equal(config.hasAdminPanel, true);
     assert.equal(config.meshCentralCompat, '>=1.2.5');
     assert.equal(config.versionHistoryUrl, undefined);
-    assert.equal(config.downloadUrl, 'https://raw.githubusercontent.com/maxdorx/MeshCentral-ScriptTask/scripttask-current/release-assets/MeshCentral-ScriptTask.zip');
+    assert.equal(config.downloadUrl, 'https://raw.githubusercontent.com/maxdorx/MeshCentral-ScriptTask/scripttask-current/release-assets/MeshCentral-ScriptTask-1.0.4.zip');
 });
 
 test('release ZIP has the plugin directory expected by MeshCentral', () => {
@@ -39,6 +39,12 @@ test('release ZIP has the plugin directory expected by MeshCentral', () => {
         'scripttask/modules_meshcore/scripttask.js'
     ]) assert.ok(entries.includes(required), `${required} is required`);
     assert.ok(entries.indexOf('scripttask/views/') < entries.indexOf('scripttask/views/user.handlebars'));
+});
+
+test('release channel includes an immutable versioned installer ZIP', () => {
+    const current = fs.readFileSync(path.join(root, 'release-assets', 'MeshCentral-ScriptTask.zip'));
+    const versioned = fs.readFileSync(path.join(root, 'release-assets', 'MeshCentral-ScriptTask-1.0.4.zip'));
+    assert.deepEqual(versioned, current);
 });
 
 test('top-level navigation uses MeshCentral shared plugin page', () => {
