@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Known Issues]
 - Please submit issues via [GitHub](https://github.com/maxdorx/MeshCentral-ScriptTask/issues).
 
+## [1.0.8] - 2026-10-23
+### Fixed
+- Use a stable installer URL because MeshCentral retains the download URL from the currently installed plugin record during upgrades.
+- Refresh the 1.0.4 through 1.0.7 installer aliases with the current package so installations using the earlier version-specific URLs can upgrade in place.
+- Preserve plugin data and history by repairing the normal Upgrade path without requiring an uninstall.
+
 ## [1.0.7] - 2026-10-23
 ### Fixed
 - Wait for MeshCentral's browser connection to become ready before requesting dashboard data or sending actions.

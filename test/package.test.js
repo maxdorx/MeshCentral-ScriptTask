@@ -10,11 +10,11 @@ const root = path.resolve(__dirname, '..');
 test('manifest matches the MeshCentral server-plugin format', () => {
     const config = JSON.parse(fs.readFileSync(path.join(root, 'config.json'), 'utf8'));
     assert.equal(config.shortName, 'scripttask');
-    assert.equal(config.version, '1.0.7');
+    assert.equal(config.version, '1.0.8');
     assert.equal(config.hasAdminPanel, true);
     assert.equal(config.meshCentralCompat, '>=1.2.5');
     assert.equal(config.versionHistoryUrl, undefined);
-    assert.equal(config.downloadUrl, 'https://raw.githubusercontent.com/maxdorx/MeshCentral-ScriptTask/scripttask-current/release-assets/MeshCentral-ScriptTask-1.0.7.zip');
+    assert.equal(config.downloadUrl, 'https://raw.githubusercontent.com/maxdorx/MeshCentral-ScriptTask/scripttask-current/release-assets/MeshCentral-ScriptTask.zip');
 });
 
 test('release ZIP has the plugin directory expected by MeshCentral', () => {
@@ -41,10 +41,14 @@ test('release ZIP has the plugin directory expected by MeshCentral', () => {
     assert.ok(entries.indexOf('scripttask/views/') < entries.indexOf('scripttask/views/user.handlebars'));
 });
 
-test('release channel includes an immutable versioned installer ZIP', () => {
+test('release channel provides the stable installer and legacy upgrade aliases', () => {
     const current = fs.readFileSync(path.join(root, 'release-assets', 'MeshCentral-ScriptTask.zip'));
-    const versioned = fs.readFileSync(path.join(root, 'release-assets', 'MeshCentral-ScriptTask-1.0.7.zip'));
+    const versioned = fs.readFileSync(path.join(root, 'release-assets', 'MeshCentral-ScriptTask-1.0.8.zip'));
     assert.deepEqual(versioned, current);
+    for (const version of ['1.0.4', '1.0.5', '1.0.6', '1.0.7']) {
+        const compatibility = fs.readFileSync(path.join(root, 'release-assets', `MeshCentral-ScriptTask-${version}.zip`));
+        assert.deepEqual(compatibility, current, `${version} installer URL must upgrade to the current package`);
+    }
 });
 
 test('top-level navigation uses MeshCentral shared plugin page', () => {

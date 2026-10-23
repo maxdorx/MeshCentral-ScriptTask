@@ -11,6 +11,7 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
 $releaseDir = Join-Path $project "release-assets"
 $archive = Join-Path $releaseDir ("MeshCentral-ScriptTask-" + $Version + ".zip")
 $latestArchive = Join-Path $releaseDir "MeshCentral-ScriptTask.zip"
+$compatibilityVersions = @("1.0.4", "1.0.5", "1.0.6", "1.0.7")
 New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
 
 $resolvedProject = (Resolve-Path -LiteralPath $project).Path.TrimEnd([char[]]'\/')
@@ -66,4 +67,8 @@ try {
 }
 
 Copy-Item -LiteralPath $archive -Destination $latestArchive
-Write-Output "Created $archive and $latestArchive for ScriptTask $Version"
+foreach ($compatibilityVersion in $compatibilityVersions) {
+    $compatibilityArchive = Join-Path $releaseDir ("MeshCentral-ScriptTask-" + $compatibilityVersion + ".zip")
+    Copy-Item -LiteralPath $archive -Destination $compatibilityArchive -Force
+}
+Write-Output "Created ScriptTask $Version and refreshed the stable installer plus legacy upgrade aliases"
