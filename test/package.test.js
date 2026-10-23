@@ -10,11 +10,11 @@ const root = path.resolve(__dirname, '..');
 test('manifest matches the MeshCentral server-plugin format', () => {
     const config = JSON.parse(fs.readFileSync(path.join(root, 'config.json'), 'utf8'));
     assert.equal(config.shortName, 'scripttask');
-    assert.equal(config.version, '1.0.6');
+    assert.equal(config.version, '1.0.7');
     assert.equal(config.hasAdminPanel, true);
     assert.equal(config.meshCentralCompat, '>=1.2.5');
     assert.equal(config.versionHistoryUrl, undefined);
-    assert.equal(config.downloadUrl, 'https://raw.githubusercontent.com/maxdorx/MeshCentral-ScriptTask/scripttask-current/release-assets/MeshCentral-ScriptTask-1.0.6.zip');
+    assert.equal(config.downloadUrl, 'https://raw.githubusercontent.com/maxdorx/MeshCentral-ScriptTask/scripttask-current/release-assets/MeshCentral-ScriptTask-1.0.7.zip');
 });
 
 test('release ZIP has the plugin directory expected by MeshCentral', () => {
@@ -43,7 +43,7 @@ test('release ZIP has the plugin directory expected by MeshCentral', () => {
 
 test('release channel includes an immutable versioned installer ZIP', () => {
     const current = fs.readFileSync(path.join(root, 'release-assets', 'MeshCentral-ScriptTask.zip'));
-    const versioned = fs.readFileSync(path.join(root, 'release-assets', 'MeshCentral-ScriptTask-1.0.6.zip'));
+    const versioned = fs.readFileSync(path.join(root, 'release-assets', 'MeshCentral-ScriptTask-1.0.7.zip'));
     assert.deepEqual(versioned, current);
 });
 
@@ -159,4 +159,14 @@ test('fleet run view uses the compact full-height device layout', () => {
     assert.match(template, /class="devicecontrols"/);
     assert.match(template, /\.devicelist\{flex:1 1 auto;min-height:0;overflow:auto\}/);
     assert.doesNotMatch(template, /max-height:430px/);
+});
+
+test('browser actions wait for MeshCentral and dialogs avoid theme collisions', () => {
+    const template = fs.readFileSync(path.join(root, 'views', 'user.handlebars'), 'utf8');
+    assert.match(template, /server\.State!==2/);
+    assert.match(template, /attempt<60/);
+    assert.match(template, /MeshCentral connection is unavailable\./);
+    assert.match(template, /class="st-dialog"/);
+    assert.match(template, /\.st-dialog\{display:block/);
+    assert.doesNotMatch(template, /class="modal"/);
 });

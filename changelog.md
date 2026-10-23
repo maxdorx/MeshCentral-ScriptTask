@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Known Issues]
 - Please submit issues via [GitHub](https://github.com/maxdorx/MeshCentral-ScriptTask/issues).
 
+## [1.0.7] - 2026-10-23
+### Fixed
+- Wait for MeshCentral's browser connection to become ready before requesting dashboard data or sending actions.
+- Retry connection-dependent requests instead of leaving the script library stuck on Loading.
+- Namespace the dialog container so MeshCentral and Bootstrap modal styles cannot hide ScriptTask dialogs.
+
 ## [1.0.6] - 2026-10-22
 ### Improved
 - Compact the selected-script header and primary navigation to preserve working space.

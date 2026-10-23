@@ -1,14 +1,14 @@
 {
   "name": "ScriptTask",
   "shortName": "scripttask",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "author": "Ryan Blenis; modernized by maxdorx",
   "description": "Fleet-wide PowerShell, BAT and Bash runner with schedules, audit results and CSV export",
   "hasAdminPanel": true,
   "homepage": "https://github.com/maxdorx/MeshCentral-ScriptTask",
   "changelogUrl": "https://raw.githubusercontent.com/maxdorx/MeshCentral-ScriptTask/master/changelog.md",
   "configUrl": "https://raw.githubusercontent.com/maxdorx/MeshCentral-ScriptTask/master/config.json",
-  "downloadUrl": "https://raw.githubusercontent.com/maxdorx/MeshCentral-ScriptTask/scripttask-current/release-assets/MeshCentral-ScriptTask-1.0.6.zip",
+  "downloadUrl": "https://raw.githubusercontent.com/maxdorx/MeshCentral-ScriptTask/scripttask-current/release-assets/MeshCentral-ScriptTask-1.0.7.zip",
   "repository": {
     "type": "git",
     "url": "https://github.com/maxdorx/MeshCentral-ScriptTask.git"
