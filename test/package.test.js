@@ -10,7 +10,7 @@ const root = path.resolve(__dirname, '..');
 test('manifest matches the MeshCentral server-plugin format', () => {
     const config = JSON.parse(fs.readFileSync(path.join(root, 'config.json'), 'utf8'));
     assert.equal(config.shortName, 'scripttask');
-    assert.equal(config.version, '1.0.8');
+    assert.equal(config.version, '1.0.9');
     assert.equal(config.hasAdminPanel, true);
     assert.equal(config.meshCentralCompat, '>=1.2.5');
     assert.equal(config.versionHistoryUrl, undefined);
@@ -43,7 +43,7 @@ test('release ZIP has the plugin directory expected by MeshCentral', () => {
 
 test('release channel provides the stable installer and legacy upgrade aliases', () => {
     const current = fs.readFileSync(path.join(root, 'release-assets', 'MeshCentral-ScriptTask.zip'));
-    const versioned = fs.readFileSync(path.join(root, 'release-assets', 'MeshCentral-ScriptTask-1.0.8.zip'));
+    const versioned = fs.readFileSync(path.join(root, 'release-assets', 'MeshCentral-ScriptTask-1.0.9.zip'));
     assert.deepEqual(versioned, current);
     for (const version of ['1.0.4', '1.0.5', '1.0.6', '1.0.7']) {
         const compatibility = fs.readFileSync(path.join(root, 'release-assets', `MeshCentral-ScriptTask-${version}.zip`));
@@ -173,4 +173,12 @@ test('browser actions wait for MeshCentral and dialogs avoid theme collisions', 
     assert.match(template, /class="st-dialog"/);
     assert.match(template, /\.st-dialog\{display:block/);
     assert.doesNotMatch(template, /class="modal"/);
+});
+
+test('only the Shared root folder is protected from rename and delete', () => {
+    const template = fs.readFileSync(path.join(root, 'views', 'user.handlebars'), 'utf8');
+    assert.match(template, /i&&i\.type==='folder'&&i\.path==='Shared'/);
+    assert.match(template, /deleteBtn'\)\.disabled=!i\|\|root/);
+    assert.match(template, /renameBtn'\)\.disabled=!i\|\|root/);
+    assert.doesNotMatch(template, /disabled=!i\|\|i\.path==='Shared'/);
 });

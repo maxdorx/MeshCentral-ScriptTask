@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Known Issues]
 - Please submit issues via [GitHub](https://github.com/maxdorx/MeshCentral-ScriptTask/issues).
 
+## [1.0.9] - 2026-10-23
+### Fixed
+- Allow scripts stored directly in Shared to be renamed and deleted.
+- Restrict root protection to the Shared folder itself instead of every item whose path is Shared.
+
 ## [1.0.8] - 2026-10-23
 ### Fixed
 - Use a stable installer URL because MeshCentral retains the download URL from the currently installed plugin record during upgrades.

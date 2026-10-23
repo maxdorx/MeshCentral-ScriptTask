@@ -1,7 +1,7 @@
 {
   "name": "ScriptTask",
   "shortName": "scripttask",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "author": "Ryan Blenis; modernized by maxdorx",
   "description": "Fleet-wide PowerShell, BAT and Bash runner with schedules, audit results and CSV export",
   "hasAdminPanel": true,
