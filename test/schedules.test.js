@@ -93,7 +93,7 @@ test('deletion waits for schedule generation and clears the run it queued', asyn
     plugin.determineNextJobTime = () => 100;
     Object.assign(plugin.db, {
         async getSchedulesDueForJob() { return schedules.filter(schedule => schedule._id === 'schedule-1'); },
-        async get() { return [{ name: 'script' }]; },
+        async get() { return [{ _id: 'script', name: 'script', type: 'script' }]; },
         async getIncompleteJobsForSchedule() { return []; },
         async addJob(job) {
             await new Promise(resolve => { releaseInsert = resolve; insertStarted(); });

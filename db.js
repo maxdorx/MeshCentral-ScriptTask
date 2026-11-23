@@ -26,6 +26,10 @@ module.exports.CreateDB = function(meshserver) {
             return { $and: [ query, obj.domainFilter(domain) ] };
         };
 
+        function referenceIds(ids) {
+            return ids.concat(ids.filter(function(id) { return typeof id !== 'string'; }).map(String));
+        }
+
         obj.updateDBVersion = function(new_version) {
           return obj.scriptFile.updateOne({type: "db_version"}, { $set: {version: new_version} }, {upsert: true});
         };
@@ -154,14 +158,15 @@ module.exports.CreateDB = function(meshserver) {
             var nowTime = Math.floor(new Date() / 1000);
             var scheduleIdLimiter = {};
             if (scheduleId != null) {
-                scheduleIdLimiter._id = scheduleId;
+                scheduleIdLimiter._id = formatId(scheduleId);
             }
             return obj.scriptFile.find( { 
                 type: 'jobSchedule',
+                paused: { $ne: true },
                 // startAt: { $gte: nowTime },
                 $and: [
                     { $or: [ { endAt: null }, { endAt: { $gte: nowTime } } ] },
-                    { $or: [ { nextRun: null }, { nextRun: { $lte: (nowTime + 60) } } ] }
+                    { $or: [ { nextRun: null }, { recur: { $ne: 'once' }, nextRun: { $lte: (nowTime + 60) } } ] }
                 ],
                 ...scheduleIdLimiter
             }).toArray();
@@ -191,6 +196,24 @@ module.exports.CreateDB = function(meshserver) {
         };
         obj.getPendingJobForNodeScript = function(nodeId, scriptId) {
             return obj.scriptFile.find({ type: 'job', node: nodeId, scriptId: formatId(scriptId), completeTime: null }).limit(1).toArray();
+        };
+        obj.getOpenJobs = function(domain, ids) {
+            var query = { type: 'job', completeTime: null };
+            if (ids) query._id = { $in: ids.map(function(id) { return formatId(id); }) };
+            return obj.scriptFile.find(obj.withDomain(query, domain)).sort({ queueTime: 1 })
+                .project({ scriptId: 1, scriptName: 1, node: 1, jobSchedule: 1, queueTime: 1, dontQueueUntil: 1, dispatchTime: 1, expiresAt: 1 }).toArray();
+        };
+        obj.completeJob = function(id, changes) {
+            return obj.scriptFile.updateOne({ _id: formatId(id), type: 'job', completeTime: null }, { $set: changes });
+        };
+        obj.cancelJobs = function(ids, domain, dispatched, changes) {
+            var query = { type: 'job', _id: { $in: ids }, completeTime: null,
+                dispatchTime: dispatched ? { $gt: 0 } : null };
+            return obj.scriptFile.updateMany(obj.withDomain(query, domain), { $set: changes });
+        };
+        obj.expireQueuedJobs = function(now) {
+            return obj.scriptFile.updateMany({ type: 'job', completeTime: null, dispatchTime: null,
+                expiresAt: { $gt: 0, $lte: now } }, { $set: { completeTime: now, jobState: 'expired' } });
         };
         obj.getJobNodeHistory = function(nodeId, domain) {
             return obj.scriptFile.find( { 
@@ -228,16 +251,34 @@ module.exports.CreateDB = function(meshserver) {
             return obj.scriptFile.find(obj.withDomain(query, domain)).toArray();
         };
         obj.getIncompleteJobsForSchedule = function (schedId) {
-            return obj.scriptFile.find( { type: 'job', jobSchedule: schedId, completeTime: null } ).toArray();
+            return obj.scriptFile.find({ type: 'job', jobSchedule: { $in: referenceIds([schedId]) }, completeTime: null }).toArray();
         };
         obj.deletePendingJobsForSchedule = function (schedId) {
             return obj.deletePendingJobsForSchedules([schedId]);
         };
         obj.deletePendingJobsForSchedules = function(ids) {
-            return obj.scriptFile.deleteMany({ type: 'job', jobSchedule: { $in: ids }, completeTime: null });
+            return obj.scriptFile.deleteMany({ type: 'job', jobSchedule: { $in: referenceIds(ids) }, completeTime: null });
         };
         obj.deleteJobSchedules = function(ids, domain) {
             return obj.scriptFile.deleteMany(obj.withDomain({ type: 'jobSchedule', _id: { $in: ids } }, domain));
+        };
+        obj.updateJobSchedules = function(ids, domain, changes) {
+            var query = { type: 'jobSchedule', _id: { $in: ids } };
+            return obj.scriptFile.updateMany(obj.withDomain(query, domain), { $set: changes });
+        };
+        obj.getScheduleJobs = function(ids, domain, completed) {
+            if (ids.length === 0) return Promise.resolve([]);
+            var query = { type: 'job', jobSchedule: { $in: referenceIds(ids) }, completeTime: completed ? { $gt: 0 } : null };
+            var projection = { jobSchedule: 1, dispatchTime: 1, completeTime: 1 };
+            if (completed) {
+                query.jobState = { $nin: ['canceled', 'expired'] };
+                projection.errorVal = 1;
+            }
+            return obj.scriptFile.find(obj.withDomain(query, domain)).sort({ completeTime: -1, _id: -1 })
+                .project(projection).toArray();
+        };
+        obj.getPausedScheduleIds = function() {
+            return obj.scriptFile.find({ type: 'jobSchedule', paused: true }).project({ _id: 1 }).toArray();
         };
         obj.deleteOldHistory = function() {
             var nowTime = Math.floor(new Date() / 1000);

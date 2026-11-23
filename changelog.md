@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Known Issues]
 - Please submit issues via [GitHub](https://github.com/maxdorx/MeshCentral-ScriptTask/issues).
 
+## [1.0.11] - 2026-11-23
+### Added
+- Group schedules in Deployments, with per-device results and controls to pause, resume, edit schedules, and retry failed devices.
+- Inspect all visible unfinished jobs in Queue, including older records. Cancel waiting jobs or stop retrying dispatched jobs.
+- Set an optional expiration for Run now jobs that have not been sent.
+
 ## [1.0.10] - 2026-11-23
 ### Added
 - Select individual schedules or all schedules shown and delete them together.

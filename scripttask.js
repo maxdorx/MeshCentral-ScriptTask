@@ -275,7 +275,7 @@ module.exports.scripttask = function (parent) {
         pluginHandler.scripttask.fitScriptTaskFrame(true);
     };
     
-    // Keep deletion from racing with schedule generation or dispatching a stale queue snapshot.
+    // Serialize queue changes with dispatch and schedule generation.
     var scheduleWork = Promise.resolve();
     function withScheduleWork(work) {
         var operation = scheduleWork.then(work);
@@ -290,68 +290,65 @@ module.exports.scripttask = function (parent) {
         }).catch(e => { console.log('PLUGIN: ScriptTask: Queue Run Error: ', e); });
     };
 
-    function dispatchPendingJobs() {
+    async function dispatchPendingJobs() {
         var onlineAgents = Object.keys(obj.meshServer.webserver.wsagents);
-        //obj.debug('ScriptTask', 'Queue Running', Date().toLocaleString(), 'Online agents: ', onlineAgents);
+        await obj.db.expireQueuedJobs(Math.floor(Date.now() / 1000));
+        var pending = await Promise.all([obj.db.getPendingJobs(onlineAgents), obj.db.getPausedScheduleIds()]);
+        var pausedIds = new Set(pending[1].map(function(schedule) { return String(schedule._id); }));
+        var jobs = pending[0].filter(function(job) { return !pausedIds.has(String(job.jobSchedule)); });
+        return Promise.all(jobs.map(job => {
+            return obj.db.get(job.scriptId)
+            .then(async (script) => {
+                if (script.length != 1 || script[0].type != 'script') return;
+                script = script[0];
+                var foundVars = script.content.match(/#(.*?)#/g);
+                var replaceVars = {};
+                if (foundVars != null && foundVars.length > 0) {
+                    var foundVarNames = [];
+                    foundVars.forEach(fv => {
+                        foundVarNames.push(fv.replace(/^#+|#+$/g, ''));
+                    });
 
-        return obj.db.getPendingJobs(onlineAgents)
-        .then((jobs) => {
-            if (jobs.length == 0) return;
-            //@TODO check for a large number and use taskLimiter to queue the jobs
-            return Promise.all(jobs.map(job => {
-                return obj.db.get(job.scriptId)
-                .then(async (script) => {
-                    if (script.length != 1 || script[0].type != 'script') return;
-                    script = script[0];
-                    var foundVars = script.content.match(/#(.*?)#/g);
-                    var replaceVars = {};
-                    if (foundVars != null && foundVars.length > 0) {
-                        var foundVarNames = [];
-                        foundVars.forEach(fv => {
-                            foundVarNames.push(fv.replace(/^#+|#+$/g, ''));
-                        });
-                        
-                        var limiters = { 
-                            scriptId: job.scriptId,
-                            nodeId: job.node,
-                            meshId: obj.meshServer.webserver.wsagents[job.node]['dbMeshKey'],
-                            names: foundVarNames
-                        };
-                        var finvals = await obj.db.getVariables(limiters, job.domain);
-                        var ordering = { 'global': 0, 'script': 1, 'mesh': 2, 'node': 3 }
-                        finvals.sort((a, b) => {
-                            return (ordering[a.scope] - ordering[b.scope])
-                              || a.name.localeCompare(b.name);
-                        });
-                        finvals.forEach(fv => {
-                            replaceVars[fv.name] = fv.value;
-                        });
-                        replaceVars['GBL:meshId'] = obj.meshServer.webserver.wsagents[job.node]['dbMeshKey'];
-                        replaceVars['GBL:nodeId'] = job.node;
-                        replaceVars['GBL:runBy'] = job.runBy || 'unknown';
-                        //console.log('FV IS', finvals);
-                        //console.log('RV IS', replaceVars);
-                    }
-                    var dispatchTime = Math.floor(new Date() / 1000);
-                    var jObj = { 
-                        action: 'plugin', 
-                        plugin: 'scripttask', 
-                        pluginaction: 'triggerJob',
-                        jobId: job._id,
+                    var limiters = {
                         scriptId: job.scriptId,
-                        replaceVars: replaceVars,
-                        scriptHash: script.contentHash,
-                        dispatchTime: dispatchTime
+                        nodeId: job.node,
+                        meshId: obj.meshServer.webserver.wsagents[job.node]['dbMeshKey'],
+                        names: foundVarNames
                     };
-                    //obj.debug('ScriptTask', 'Sending job to agent');
-                    try { 
-                        obj.meshServer.webserver.wsagents[job.node].send(JSON.stringify(jObj));
-                        return obj.db.update(job._id, { dispatchTime: dispatchTime });
-                    } catch (e) { }
-                })
-                .catch(e => console.log('PLUGIN: ScriptTask: Could not dispatch job.', e));
-            }));
-        });
+                    var finvals = await obj.db.getVariables(limiters, job.domain);
+                    var ordering = { 'global': 0, 'script': 1, 'mesh': 2, 'node': 3 }
+                    finvals.sort((a, b) => {
+                        return (ordering[a.scope] - ordering[b.scope])
+                          || a.name.localeCompare(b.name);
+                    });
+                    finvals.forEach(fv => {
+                        replaceVars[fv.name] = fv.value;
+                    });
+                    replaceVars['GBL:meshId'] = obj.meshServer.webserver.wsagents[job.node]['dbMeshKey'];
+                    replaceVars['GBL:nodeId'] = job.node;
+                    replaceVars['GBL:runBy'] = job.runBy || 'unknown';
+                    //console.log('FV IS', finvals);
+                    //console.log('RV IS', replaceVars);
+                }
+                var dispatchTime = Math.floor(new Date() / 1000);
+                var jObj = {
+                    action: 'plugin',
+                    plugin: 'scripttask',
+                    pluginaction: 'triggerJob',
+                    jobId: job._id,
+                    scriptId: job.scriptId,
+                    replaceVars: replaceVars,
+                    scriptHash: script.contentHash,
+                    dispatchTime: dispatchTime
+                };
+                //obj.debug('ScriptTask', 'Sending job to agent');
+                try {
+                    obj.meshServer.webserver.wsagents[job.node].send(JSON.stringify(jObj));
+                    return obj.db.update(job._id, { dispatchTime: dispatchTime });
+                } catch (e) { }
+            })
+            .catch(e => console.log('PLUGIN: ScriptTask: Could not dispatch job.', e));
+        }));
     }
     
     obj.cleanHistory = function() {
@@ -399,8 +396,63 @@ module.exports.scripttask = function (parent) {
         obj.meshServer.DispatchEvent([user._id], obj, event);
     };
 
-    obj.getDashboardData = function(user) {
+    function deploymentId(schedule) {
+        if (schedule.deploymentId) return schedule.deploymentId;
+        var days = Array.isArray(schedule.daysOfWeek) ? schedule.daysOfWeek.map(Number).sort() : [];
+        var timing = [String(schedule.scriptId), schedule.scheduledBy, schedule.recur, Number(schedule.interval) || 1,
+            Number(schedule.startAt), schedule.endAt == null ? null : Number(schedule.endAt), days];
+        return 'legacy-' + require('crypto').createHash('sha256').update(JSON.stringify(timing)).digest('hex');
+    }
+
+    async function latestScheduleOutcomes(schedules, domain) {
+        var outcomes = new Map();
+        var legacyIds = [];
+        schedules.forEach(function(schedule) {
+            if (schedule.lastOutcome) outcomes.set(String(schedule._id), schedule.lastOutcome);
+            else if (schedule.lastRun != null) legacyIds.push(schedule._id);
+        });
+        var jobs = await obj.db.getScheduleJobs(legacyIds, domain, true);
+        jobs.forEach(function(job) {
+            var id = String(job.jobSchedule);
+            if (!outcomes.has(id)) outcomes.set(id, job.errorVal != null ? 'error' : 'reported');
+        });
+        legacyIds.forEach(function(id) { if (!outcomes.has(String(id))) outcomes.set(String(id), 'reported'); });
+        return outcomes;
+    }
+
+    async function buildDeployments(schedules, visible, queue, domain) {
+        var outcomes = await latestScheduleOutcomes(visible, domain);
+        var totals = new Map(), deployments = new Map(), pending = new Map();
+        schedules.forEach(function(schedule) {
+            var id = deploymentId(schedule);
+            totals.set(id, (totals.get(id) || 0) + 1);
+        });
+        queue.forEach(function(job) {
+            if (job.jobSchedule != null) pending.set(String(job.jobSchedule), job);
+        });
+        visible.forEach(function(schedule) {
+            var id = deploymentId(schedule), grouping = deployments.get(id);
+            if (!grouping) {
+                grouping = { id: id, scriptId: schedule.scriptId, recur: schedule.recur, interval: schedule.interval,
+                    startAt: schedule.startAt, endAt: schedule.endAt, daysOfWeek: schedule.daysOfWeek,
+                    paused: schedule.paused === true, targets: [], errors: 0, reported: 0 };
+                deployments.set(id, grouping);
+            }
+            var key = String(schedule._id), job = pending.get(key), outcome = outcomes.get(key);
+            grouping.targets.push({ node: schedule.node, outcome: outcome, lastRun: schedule.lastRun,
+                dispatchTime: job && job.dispatchTime, pending: Boolean(job), nextRun: schedule.nextRun });
+            if (outcome === 'error') grouping.errors++;
+            else if (outcome === 'reported') grouping.reported++;
+        });
+        return Array.from(deployments.values(), function(grouping) {
+            grouping.canManage = grouping.targets.length === totals.get(grouping.id);
+            return grouping;
+        });
+    }
+
+    obj.getDashboardData = function(user, options) {
         var domain = obj.getDomainId(user);
+        options = options || {};
         return obj.db.ensureDomainDefaults(domain).then(function() { return Promise.all([
             obj.db.getScriptTree(domain),
             obj.db.getJobHistory(domain, 1000),
@@ -408,12 +460,21 @@ module.exports.scripttask = function (parent) {
             obj.db.getVariables(null, domain),
             obj.hasPermission(user, 'run'),
             obj.hasPermission(user, 'edit'),
-            obj.hasPermission(user, 'variables')
+            obj.hasPermission(user, 'variables'),
+            options.queueData || options.deploymentData ? obj.db.getOpenJobs(domain) : []
         ]); }).then(function(data) {
-            return Promise.all([obj.filterVisibleRows(user, data[1]), obj.filterVisibleRows(user, data[2])]).then(function(filtered) {
+            return Promise.all([obj.filterVisibleRows(user, data[1]), obj.filterVisibleRows(user, data[2]), obj.filterVisibleRows(user, data[7])]).then(async function(filtered) {
+                var queue;
+                if (options.queueData) {
+                    var paused = new Set(data[2].filter(function(schedule) { return schedule.paused; })
+                        .map(function(schedule) { return String(schedule._id); }));
+                    queue = filtered[2].map(function(job) { return Object.assign({}, job, { paused: paused.has(String(job.jobSchedule)) }); });
+                }
                 return {
                     tree: data[0], history: filtered[0], schedules: filtered[1], variables: data[3],
-                    permissions: { run: data[4], edit: data[5], variables: data[6] }
+                    permissions: { run: data[4], edit: data[5], variables: data[6] },
+                    queue: queue,
+                    deployments: options.deploymentData ? await buildDeployments(data[2], filtered[1], filtered[2], domain) : undefined
                 };
             });
         });
@@ -461,8 +522,10 @@ module.exports.scripttask = function (parent) {
                     }
                     var output = ['Time,Device ID,Script,Run By,Status,Output,Error'];
                     rows.forEach(function(r) {
-                        var status = r.errorVal != null ? 'Error' : (r.returnVal != null ? 'Completed' : (r.dispatchTime != null ? 'Running' : 'Queued'));
-                        output.push([new Date(((r.completeTime || r.dispatchTime || r.queueTime) || 0) * 1000).toISOString(), r.node, r.scriptName || r.scriptId, r.runBy, status, r.returnVal, r.errorVal].map(csv).join(','));
+                        var status = r.jobState === 'canceled' ? 'Canceled' : r.jobState === 'expired' ? 'Expired' :
+                            r.errorVal != null ? 'Error' : r.returnVal != null ? 'Completed' : r.dispatchTime != null ? 'Running' : 'Queued';
+                        var detail = r.cancelReason ? r.cancelReason + (r.canceledBy ? ' by ' + r.canceledBy : '') : r.returnVal;
+                        output.push([new Date(((r.completeTime || r.dispatchTime || r.queueTime) || 0) * 1000).toISOString(), r.node, r.scriptName || r.scriptId, r.runBy, status, detail, r.errorVal].map(csv).join(','));
                     });
                     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
                     res.setHeader('Content-Disposition', 'attachment; filename="scripttask-results.csv"');
@@ -645,14 +708,15 @@ module.exports.scripttask = function (parent) {
                     // Keep at most one incomplete run per schedule while a device is offline.
                     var jobs = await obj.db.getIncompleteJobsForSchedule(s._id);
                     if (jobs.length === 0) {
-                        await obj.db.addJob({ scriptId: s.scriptId, scriptName: scripts[0].name, node: s.node, runBy: s.scheduledBy, dontQueueUntil: nextJobTime, jobSchedule: s._id, domain: s.domain || '' });
+                        if (!scripts.length || scripts[0].type !== 'script') return;
+                        await obj.db.addJob({ scriptId: scripts[0]._id, scriptName: scripts[0].name, node: s.node, runBy: s.scheduledBy, dontQueueUntil: nextJobTime, jobSchedule: s._id, domain: s.domain || '' });
                         await obj.db.update(s._id, { nextRun: nextJobTime });
                     }
-                    obj.updateFrontEnd({ scriptId: s.scriptId, nodeId: s.node });
                 } catch (e) {
                     console.log('PLUGIN: ScriptTask: Error managing job schedules: ', e);
                 }
             }));
+            if (schedules.length) obj.updateFrontEnd({});
         }).catch(function(e) { console.log('PLUGIN: ScriptTask: Error loading due schedules: ', e); });
     };
     
@@ -661,6 +725,55 @@ module.exports.scripttask = function (parent) {
         if (value.length == 0 || value.length > 160 || /[\r\n\\/]/.test(value)) throw new Error('Invalid name.');
         return value;
     };
+
+    function readSchedule(value) {
+        var timing = value || {};
+        var recur = ['once', 'minutes', 'hourly', 'daily', 'weekly'].includes(timing.recur) ? timing.recur : 'once';
+        var interval = Math.floor(Number(timing.interval) || 1);
+        var startAt = Math.floor(Number(timing.startAt));
+        var endAt = timing.endAt == null ? null : Math.floor(Number(timing.endAt));
+        if (!Number.isSafeInteger(interval) || interval < 1) throw new Error('Select a valid recurrence interval.');
+        if (!Number.isFinite(startAt) || startAt <= 0 || startAt > 8640000000000) throw new Error('Select a valid start date and time.');
+        if (endAt != null && (!Number.isFinite(endAt) || endAt <= startAt || endAt > 8640000000000)) throw new Error('The end time must be after the start time.');
+        var days = Array.isArray(timing.dayVals) ? timing.dayVals.map(Number).filter(function(day) { return Number.isInteger(day) && day >= 0 && day <= 6; }) : [];
+        if (recur === 'weekly' && days.length === 0) throw new Error('Select at least one weekday.');
+        return { recur: recur, interval: interval, daysOfWeek: Array.from(new Set(days)), startAt: startAt, endAt: endAt };
+    }
+
+    function closeJobs(ids, domain, dispatched, user, reason) {
+        if (ids.length === 0) return Promise.resolve({ modifiedCount: 0 });
+        return obj.db.cancelJobs(ids, domain, dispatched, {
+            completeTime: Math.floor(Date.now() / 1000), jobState: 'canceled', canceledBy: user.name, cancelReason: reason
+        });
+    }
+
+    async function retryFailedTargets(schedules, domain, myparent, grandparent) {
+        var outcomes = await latestScheduleOutcomes(schedules, domain);
+        var failed = schedules.filter(function(schedule) { return outcomes.get(String(schedule._id)) === 'error'; });
+        var allowed = new Set(await new Promise(function(resolve) {
+            obj.authorizedNodes(myparent, grandparent, failed.map(function(schedule) { return schedule.node; }), resolve);
+        }));
+        var script = (await obj.db.getForDomain(String(schedules[0].scriptId), domain))[0];
+        if (!script || script.type !== 'script') throw new Error('Script not found.');
+        var jobs = await obj.db.getScheduleJobs(failed.map(function(schedule) { return schedule._id; }), domain, false);
+        var bySchedule = new Map();
+        jobs.forEach(function(job) {
+            var id = String(job.jobSchedule);
+            if (!bySchedule.has(id) || job.dispatchTime != null) bySchedule.set(id, job);
+        });
+        var now = Math.floor(Date.now() / 1000);
+        var retries = failed.filter(function(schedule) {
+            var job = bySchedule.get(String(schedule._id));
+            return allowed.has(schedule.node) && (!job || job.dispatchTime == null);
+        });
+        await Promise.all(retries.map(function(schedule) {
+            var job = bySchedule.get(String(schedule._id));
+            if (job) return obj.db.update(job._id, { dontQueueUntil: now });
+            return obj.db.addJob({ scriptId: script._id, scriptName: script.name, node: schedule.node,
+                runBy: myparent.user.name, domain: domain, jobSchedule: schedule._id, dontQueueUntil: now });
+        }));
+        return retries.length;
+    }
 
     obj.authorizedNodes = function(myparent, grandparent, requested, callback) {
         requested = Array.isArray(requested) ? requested : [requested];
@@ -694,10 +807,12 @@ module.exports.scripttask = function (parent) {
                 obj.db.get(command.jobId).then(function(jobs) {
                     if (jobs.length != 1 || jobs[0].node != myparent.dbNodeKey || String(jobs[0].scriptId) != String(command.scriptId) || jobs[0].completeTime != null) return;
                     var completeTime = Math.floor(Date.now() / 1000);
-                    return obj.db.update(command.jobId, { completeTime: completeTime, returnVal: command.retVal, errorVal: command.errVal, dispatchTime: command.dispatchTime })
-                        .then(function() {
+                    return obj.db.completeJob(command.jobId, { completeTime: completeTime, returnVal: command.retVal, errorVal: command.errVal, dispatchTime: command.dispatchTime })
+                        .then(function(update) {
+                            if (!update.modifiedCount) return;
                             if (jobs[0].jobSchedule == null) return;
-                            return obj.db.update(jobs[0].jobSchedule, { lastRun: completeTime }).then(function() { obj.makeJobsFromSchedules(jobs[0].jobSchedule); });
+                            return obj.db.update(jobs[0].jobSchedule, { lastRun: completeTime, lastOutcome: command.errVal != null ? 'error' : 'reported' })
+                                .then(function() { obj.makeJobsFromSchedules(jobs[0].jobSchedule); });
                         }).then(function() { obj.updateFrontEnd({}); });
                 }).catch(function(e) { console.log('PLUGIN: ScriptTask: Failed to complete job.', e); });
                 return;
@@ -726,7 +841,8 @@ module.exports.scripttask = function (parent) {
         if (action == 'loadDashboard') {
             obj.hasPermission(user, 'view').then(function(allowed) {
                 if (!allowed) { result(false, 'Permission denied.'); return; }
-                return obj.getDashboardData(user).then(function(data) { obj.sendUserEvent(user, 'dashboardData', { data: data }); });
+                return obj.getDashboardData(user, { deploymentData: command.deploymentData === true, queueData: command.queueData === true })
+                    .then(function(data) { obj.sendUserEvent(user, 'dashboardData', { data: data }); });
             }).catch(fail);
             return;
         }
@@ -744,6 +860,7 @@ module.exports.scripttask = function (parent) {
 
         if (action == 'runScript' || action == 'addScheduledJob') {
             requirePermission('run', function() {
+                var timing = action === 'addScheduledJob' ? readSchedule(command.schedule) : null;
                 obj.db.getForDomain(command.scriptId, domain).then(function(scripts) {
                     if (scripts.length != 1 || scripts[0].type != 'script') throw new Error('Script not found.');
                     var script = scripts[0];
@@ -753,31 +870,83 @@ module.exports.scripttask = function (parent) {
                         var skipped = requestedNodes.length - nodes.length;
                         var skippedText = skipped > 0 ? ' ' + skipped + ' device' + (skipped == 1 ? ' was' : 's were') + ' skipped because of permissions.' : '';
                         if (action == 'runScript') {
+                            var seconds = Number(command.expiresIn);
+                            var expiresAt = [3600, 86400, 604800].includes(seconds) ? Math.floor(Date.now() / 1000) + seconds : null;
                             Promise.all(nodes.map(function(nodeId) {
-                                return obj.db.addJob({ scriptId: script._id, scriptName: script.name, node: nodeId, runBy: user.name, domain: domain });
+                                return obj.db.addJob({ scriptId: script._id, scriptName: script.name, node: nodeId, runBy: user.name, domain: domain, expiresAt: expiresAt });
                             })).then(function() {
                                 obj.resetQueueTimer(); obj.queueRun();
                                 result(true, 'Queued on ' + nodes.length + ' device' + (nodes.length == 1 ? '.' : 's.') + skippedText, { queued: nodes.length, skipped: skipped });
                             }).catch(fail);
                             return;
                         }
-                        var sj = command.schedule || {};
-                        var recur = ['once', 'minutes', 'hourly', 'daily', 'weekly'].indexOf(sj.recur) >= 0 ? sj.recur : 'once';
-                        var interval = Math.max(1, Math.floor(Number(sj.interval) || 1));
-                        var startAt = Math.floor(Number(sj.startAt));
-                        var endAt = sj.endAt == null ? null : Math.floor(Number(sj.endAt));
-                        if (!Number.isFinite(startAt) || startAt <= 0) { result(false, 'Select a valid start date and time.'); return; }
-                        if (endAt != null && (!Number.isFinite(endAt) || endAt <= startAt)) { result(false, 'The end time must be after the start time.'); return; }
-                        var dayVals = Array.isArray(sj.dayVals) ? sj.dayVals.map(Number).filter(function(v) { return v >= 0 && v <= 6; }) : [];
-                        if (recur == 'weekly' && dayVals.length == 0) { result(false, 'Select at least one weekday.'); return; }
+                        var batchId = require('crypto').randomUUID();
                         Promise.all(nodes.map(function(nodeId) {
-                            return obj.db.addJobSchedule({ scriptId: script._id, node: nodeId, scheduledBy: user.name, recur: recur, interval: interval, daysOfWeek: dayVals, startAt: startAt, endAt: endAt, lastRun: null, nextRun: null, domain: domain });
+                            return obj.db.addJobSchedule(Object.assign({ scriptId: script._id, node: nodeId, scheduledBy: user.name,
+                                deploymentId: batchId, lastRun: null, nextRun: null, domain: domain }, timing));
                         })).then(function() {
                             obj.makeJobsFromSchedules();
                             result(true, 'Scheduled on ' + nodes.length + ' device' + (nodes.length == 1 ? '.' : 's.') + skippedText, { queued: nodes.length, skipped: skipped });
                         }).catch(fail);
                     });
                 }).catch(fail);
+            });
+            return;
+        }
+
+        if (action === 'pauseDeployment' || action === 'resumeDeployment' || action === 'editDeployment' || action === 'retryDeployment') {
+            requirePermission('run', async function() {
+                var timing = action === 'editDeployment' ? readSchedule(command.schedule) : null;
+                var count = await withScheduleWork(async function() {
+                    var schedules = (await obj.db.getJobSchedules(domain)).filter(function(schedule) { return deploymentId(schedule) === command.id; });
+                    if (!schedules.length) throw new Error('Deployment not found.');
+                    if ((await obj.filterVisibleRows(user, schedules)).length !== schedules.length) throw new Error('You need access to all devices in this deployment.');
+                    var ids = schedules.map(function(schedule) { return schedule._id; });
+                    if (action === 'retryDeployment') {
+                        var now = Math.floor(Date.now() / 1000);
+                        var active = schedules.filter(function(schedule) { return !schedule.paused && (schedule.endAt == null || schedule.endAt >= now); });
+                        return active.length ? retryFailedTargets(active, domain, myparent, grandparent) : 0;
+                    }
+                    var changes = { deploymentId: command.id };
+                    if (timing) {
+                        var waiting = (await obj.db.getScheduleJobs(ids, domain, false)).filter(function(job) { return job.dispatchTime == null; });
+                        await closeJobs(waiting.map(function(job) { return job._id; }), domain, false, user, 'Schedule changed');
+                        Object.assign(changes, timing, { nextRun: null });
+                    } else {
+                        changes.paused = action === 'pauseDeployment';
+                    }
+                    return (await obj.db.updateJobSchedules(ids, domain, changes)).modifiedCount;
+                });
+                if (action === 'retryDeployment') {
+                    if (count) obj.queueRun();
+                    result(count > 0, count ? 'Queued retries on ' + count + (count === 1 ? ' device.' : ' devices.') : 'No failed devices are available to retry.');
+                    return;
+                }
+                if (action !== 'pauseDeployment') obj.makeJobsFromSchedules().then(function() { obj.queueRun(); });
+                result(true, { pauseDeployment: 'Deployment paused.', resumeDeployment: 'Deployment resumed.', editDeployment: 'Deployment schedule updated.' }[action]);
+            });
+            return;
+        }
+
+        if (action === 'cancelQueuedJobs') {
+            requirePermission('run', async function() {
+                var ids = command.ids;
+                if (!Array.isArray(ids) || ids.length === 0 || ids.some(function(id) { return typeof id !== 'string' || !id; })) {
+                    throw new Error('Select at least one valid job.');
+                }
+                var requested = Array.from(new Set(ids));
+                var dispatched = command.dispatched === true;
+                var update = await withScheduleWork(async function() {
+                    var jobs = await obj.db.getOpenJobs(domain, requested);
+                    var visible = await obj.filterVisibleRows(user, jobs);
+                    var selected = visible.map(function(job) { return job._id; });
+                    return closeJobs(selected, domain, dispatched, user, dispatched ? 'Retries stopped' : 'Canceled in queue');
+                });
+                var count = update.modifiedCount, skipped = requested.length - count;
+                if (!count) { result(false, 'The selected jobs are no longer available for this action.'); return; }
+                var message = (dispatched ? 'Stopped retries for ' : 'Canceled ') + count + (count === 1 ? ' job.' : ' jobs.');
+                if (skipped) message += ' ' + skipped + (skipped === 1 ? ' job was' : ' jobs were') + ' unavailable.';
+                result(true, message);
             });
             return;
         }
