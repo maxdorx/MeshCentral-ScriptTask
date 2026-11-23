@@ -15,7 +15,7 @@
 <div class="toast" id="toast" role="status"></div><div class="modalback" id="modalBack" onclick="if(event.target===this)closeModal()"><section class="st-dialog" role="dialog" aria-modal="true"><div class="modalhead"><h2 id="modalTitle"></h2><button onclick="closeModal()" aria-label="Close">✕</button></div><div class="modalbody" id="modalBody"></div><div class="modalfoot" id="modalFoot"></div></section></div>
 <script>
 'use strict';
-var st={data:{tree:[],history:[],schedules:[],variables:[],permissions:{}},item:null,nodeIds:new Set(),scheduleIds:new Set(),queueIds:new Set(),openDeployments:new Set(),scheduleMode:'deployments',expiresIn:0,view:'run',search:'',mesh:'',online:false,resultPage:1,resultPageSize:50};
+var st={data:{tree:[],history:[],schedules:[],variables:[],permissions:{}},item:null,nodeIds:new Set(),scheduleIds:new Set(),queueIds:new Set(),queueAllScripts:false,openDeployments:new Set(),scheduleMode:'deployments',expiresIn:0,view:'run',search:'',mesh:'',online:false,resultPage:1,resultPageSize:50};
 function themeColor(value,fallback){value=String(value||'').trim();return value&&value!=='transparent'&&value!=='rgba(0, 0, 0, 0)'?value:fallback}
 function colorRgb(color){var hex=String(color||'').trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);if(hex){var v=hex[1];if(v.length===3)v=v.split('').map(function(x){return x+x}).join('');return[parseInt(v.slice(0,2),16),parseInt(v.slice(2,4),16),parseInt(v.slice(4,6),16)]}var p=String(color||'').match(/[\d.]+/g);return p&&p.length>=3?p.slice(0,3).map(Number):null}
 function luminance(color){var p=colorRgb(color);return p?p.map(function(x){x/=255;return x<=.03928?x/12.92:Math.pow((x+.055)/1.055,2.4)}).reduce(function(t,x,i){return t+x*[.2126,.7152,.0722][i]},0):null}
@@ -23,9 +23,14 @@ function contrast(a,b){a=luminance(a);b=luminance(b);return a==null||b==null?0:(
 function syncTheme(){try{var pd=parent.document,pt=pd.getElementById('theme-stylesheet'),lt=document.getElementById('scriptTaskTheme');if(pt&&pt.href&&lt.href!==pt.href)lt.href=pt.href;var mode=pd.documentElement.getAttribute('data-bs-theme');if(mode)document.documentElement.setAttribute('data-bs-theme',mode);var rs=parent.getComputedStyle(pd.documentElement),bs=parent.getComputedStyle(pd.body),root=document.documentElement,get=function(name,fallback){return themeColor(rs.getPropertyValue(name),fallback)},bg=get('--bs-body-bg',themeColor(bs.backgroundColor,'#f4f6f8')),fg=get('--bs-body-color',themeColor(bs.color,'#17202a')),panel=get('--bs-secondary-bg',bg),panel2=get('--bs-tertiary-bg',panel),brand=get('--bs-primary',get('--bs-link-color','#1261a0'));root.style.setProperty('--bg',bg);root.style.setProperty('--panel',panel);root.style.setProperty('--panel2',panel2);root.style.setProperty('--text',fg);root.style.setProperty('--muted',get('--bs-secondary-color',fg));root.style.setProperty('--line',get('--bs-border-color','rgba(128,128,128,.35)'));root.style.setProperty('--brand',brand);root.style.setProperty('--brand2',get('--bs-link-hover-color',brand));root.style.setProperty('--danger',get('--bs-danger','#b42318'));root.style.setProperty('--ok',get('--bs-success','#027a48'));root.style.setProperty('--warn',get('--bs-warning','#b54708'));root.style.setProperty('--on-brand',contrast('#fff',brand)>=contrast('#171717',brand)?'#fff':'#171717');root.style.colorScheme=mode||(luminance(bg)>.3?'light':'dark');document.body.style.fontFamily=bs.fontFamily}catch(x){}}
 function watchTheme(){syncTheme();try{var pd=parent.document,update=function(){window.setTimeout(syncTheme,0)},pt=pd.getElementById('theme-stylesheet');new MutationObserver(update).observe(pd.documentElement,{attributes:true,attributeFilter:['class','style','data-bs-theme']});new MutationObserver(update).observe(pd.body,{attributes:true,attributeFilter:['class','style']});if(pt){new MutationObserver(update).observe(pt,{attributes:true,attributeFilter:['href']});pt.addEventListener('load',syncTheme)}document.getElementById('scriptTaskTheme').addEventListener('load',syncTheme)}catch(x){}}
 function e(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}function send(a,d,attempt){attempt=Number(attempt)||0;var server=null;try{server=window.parent&&window.parent.meshserver}catch(x){}if(!server||server.State!==2||typeof server.send!=='function'){if(attempt<60){setTimeout(function(){send(a,d,attempt+1)},250)}else{notice('MeshCentral connection is unavailable.',true)}return}try{server.send(Object.assign({action:'plugin',plugin:'scripttask',pluginaction:a},d||{}))}catch(x){if(attempt<60){setTimeout(function(){send(a,d,attempt+1)},250)}else{notice('Could not send the request to MeshCentral.',true)}}}function script(){return st.item&&st.item.type==='script'?st.item:null}function ns(){return Array.isArray(parent.nodes)?parent.nodes.filter(function(n){return n&&n.mtype===2}):[]}function ms(){return parent.meshes||{}}function nodeName(id){var n=ns().find(function(x){return x._id===id});return n?n.name:id}function scriptName(id){var s=st.data.tree.find(function(x){return String(x._id)===String(id)});return s?s.name:id}
-function notice(m,bad){var x=document.getElementById('toast');x.textContent=m;x.className='toast'+(bad?' error':'');x.style.display='block';clearTimeout(x.t);x.t=setTimeout(function(){x.style.display='none'},4500)}function refresh(){send('loadDashboard',{deploymentData:st.view==='schedules',queueData:st.view==='queue'})}window.scriptTaskRefresh=refresh;window.scriptTaskReceive=function(t,x){if(t==='dashboard'&&x.data){var scope=scheduleScope();st.data=Object.assign({},st.data,x.data);var id=st.item&&String(st.item._id);st.item=st.data.tree.find(function(i){return String(i._id)===id})||null;if(scope!==scheduleScope())st.scheduleIds.clear();draw()}else if(t==='script'&&x.script){editor(x.script)}else if(t==='operation'){notice(x.message||'Done.',!x.ok);if(x.ok){closeModal();setTimeout(refresh,150)}}};
+function notice(m,bad){var x=document.getElementById('toast');x.textContent=m;x.className='toast'+(bad?' error':'');x.style.display='block';clearTimeout(x.t);x.t=setTimeout(function(){x.style.display='none'},4500)}function refresh(){send('loadDashboard',{deploymentData:st.view==='schedules',queueData:st.view==='queue'})}window.scriptTaskRefresh=refresh;window.scriptTaskReceive=function(t,x){if(t==='dashboard'&&x.data){var scope=scheduleScope();st.data=Object.assign({},st.data,x.data);var id=st.item&&String(st.item._id);st.item=st.data.tree.find(function(i){return String(i._id)===id})||null;if(scope!==scheduleScope())resetScriptSelections();draw()}else if(t==='script'&&x.script){editor(x.script)}else if(t==='operation'){notice(x.message||'Done.',!x.ok);if(x.ok){closeModal();setTimeout(refresh,150)}}};
 function tab(v){st.view=v;document.querySelectorAll('.tab').forEach(function(x){x.classList.toggle('active',x.dataset.tab===v)});drawView();if(v==='schedules'||v==='queue')refresh()}function draw(){drawTree();drawHead();document.querySelectorAll('[data-edit]').forEach(function(x){x.classList.toggle('hidden',(st.data.permissions||{}).edit===false)});drawView()}
-function drawTree(){var q=(document.getElementById('scriptSearch').value||'').toLowerCase(),h='';(st.data.tree||[]).forEach(function(i){if(q&&((i.name||'')+' '+(i.path||'')).toLowerCase().indexOf(q)<0)return;var d=(String(i.path||'').match(/\//g)||[]).length+(i.type==='script'?1:0),on=st.item&&String(st.item._id)===String(i._id);h+='<button class="treeitem '+(on?'active':'')+'" style="padding-left:'+(8+d*16)+'px" onclick="pick(\''+e(i._id)+'\')" title="'+e(i.path)+'"><span>'+(i.type==='folder'?'📁':'📄')+'</span><span class="name">'+e(i.name)+'</span>'+(i.type==='script'?'<span class="badge">'+e(i.filetype)+'</span>':'')+'</button>'});document.getElementById('scriptTree').innerHTML=h||'<div class="empty">No scripts found.</div>';document.getElementById('scriptCount').textContent=(st.data.tree||[]).filter(function(i){return i.type==='script'}).length}function pick(id){var scope=scheduleScope();st.item=st.data.tree.find(function(i){return String(i._id)===String(id)})||null;if(scope!==scheduleScope())st.scheduleIds.clear();st.resultPage=1;draw()}
+function drawTree(){var q=(document.getElementById('scriptSearch').value||'').toLowerCase(),h='';(st.data.tree||[]).forEach(function(i){if(q&&((i.name||'')+' '+(i.path||'')).toLowerCase().indexOf(q)<0)return;var d=(String(i.path||'').match(/\//g)||[]).length+(i.type==='script'?1:0),on=st.item&&String(st.item._id)===String(i._id);h+='<button class="treeitem '+(on?'active':'')+'" style="padding-left:'+(8+d*16)+'px" onclick="pick(\''+e(i._id)+'\')" title="'+e(i.path)+'"><span>'+(i.type==='folder'?'📁':'📄')+'</span><span class="name">'+e(i.name)+'</span>'+(i.type==='script'?'<span class="badge">'+e(i.filetype)+'</span>':'')+'</button>'});document.getElementById('scriptTree').innerHTML=h||'<div class="empty">No scripts found.</div>';document.getElementById('scriptCount').textContent=(st.data.tree||[]).filter(function(i){return i.type==='script'}).length}function pick(id){var scope=scheduleScope();st.item=st.data.tree.find(function(i){return String(i._id)===String(id)})||null;if(scope!==scheduleScope())resetScriptSelections();st.resultPage=1;draw()}
+function resetScriptSelections(){
+    st.scheduleIds.clear();
+    st.queueIds.clear();
+    st.queueAllScripts=false;
+}
 function isSharedRoot(i){return!!(i&&i.type==='folder'&&i.path==='Shared')}function drawHead(){var i=st.item,s=script(),t=document.getElementById('selectedType'),root=isSharedRoot(i);document.getElementById('selectedTitle').textContent=i?i.name:'Select a script';document.getElementById('selectedPath').textContent=i?(i.path||'Shared'):'Choose a script from the library to run or inspect it.';t.textContent=s?s.filetype.toUpperCase():i?'Folder':'';t.classList.toggle('hidden',!i);document.getElementById('renameBtn').disabled=!i||root;document.getElementById('editBtn').disabled=!s;document.getElementById('deleteBtn').disabled=!i||root;document.getElementById('downloadBtn').disabled=!s}
 function drawView(){
     var panel=st.view==='schedules'?st.scheduleMode:st.view;
@@ -197,15 +202,22 @@ function queueAge(seconds){
     if(age>=3600)return Math.floor(age/3600)+'h';
     return Math.floor(age/60)+'m';
 }
+function toggleQueueScope(showAll){
+    st.queueAllScripts=showAll;
+    st.queueIds.clear();
+    queueView();
+}
 function queueView(focusId,caret){
     if(!st.data.queue){
         view.innerHTML='<div class="empty">Loading queue…</div>';
         return;
     }
     var canRun=(st.data.permissions||{}).run===true,now=Date.now()/1000;
+    var selectedScript=script();
+    var scope=selectedScript&&!st.queueAllScripts?String(selectedScript._id):null;
     var q=(st.queueSearch||'').toLowerCase(),filter=st.queueFilter||'';
     var jobs=st.data.queue.filter(function(job){
-        return (!filter||queueStatus(job,now)===filter)&&(!q||
+        return (scope===null||String(job.scriptId)===scope)&&(!filter||queueStatus(job,now)===filter)&&(!q||
             (nodeName(job.node)+' '+(job.scriptName||scriptName(job.scriptId))).toLowerCase().includes(q));
     });
     var shown=new Set(jobs.map(function(job){return String(job._id)}));
@@ -221,11 +233,14 @@ function queueView(focusId,caret){
         '<span class="muted" id="queueCount" aria-live="polite"></span>'+
         '<button id="cancelQueuedButton" class="danger" onclick="confirmQueueAction(false)">Cancel queued</button>'+
         '<button id="stopRetriesButton" class="danger" onclick="confirmQueueAction(true)">Stop retries</button>':'';
+    var scopeControl=selectedScript?'<label><input id="queueAllScripts" type="checkbox" '+(st.queueAllScripts?'checked':'')+
+        ' onchange="toggleQueueScope(this.checked)"> All scripts</label>':'';
+    var count=jobs.length+(jobs.length===1?' job':' jobs')+(scope===null?' across all scripts':' for '+e(selectedScript.name));
     view.innerHTML='<div class="filters"><input id="queueSearch" class="search" placeholder="Search scripts or devices" value="'+e(st.queueSearch||'')+
         '" oninput="st.queueSearch=this.value;queueView(\'queueSearch\',this.selectionStart)"><select aria-label="Queue status" onchange="st.queueFilter=this.value;queueView()">'+
         '<option value="">All statuses</option>'+['Queued','Scheduled','Paused','Awaiting result','Stalled'].map(function(item){
             return '<option '+(filter===item?'selected':'')+'>'+item+'</option>';
-        }).join('')+'</select><span class="muted">'+jobs.length+(jobs.length===1?' job':' jobs')+'</span><span class="spacer"></span>'+select+'</div>'+
+        }).join('')+'</select>'+scopeControl+'<span class="muted">'+count+'</span><span class="spacer"></span>'+select+'</div>'+
         '<div class="tablewrap"><table><thead><tr>'+(canRun?'<th scope="col" aria-label="Select jobs"></th>':'')+
         '<th>Script</th><th>Device</th><th>Status</th><th>Age</th><th>Eligible at</th><th>Last attempt</th><th>Expires</th></tr></thead><tbody>'+
         (rows||'<tr><td colspan="'+(canRun?8:7)+'" class="empty">No jobs match this view.</td></tr>')+'</tbody></table></div>';

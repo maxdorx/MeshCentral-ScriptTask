@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
 
@@ -143,6 +144,42 @@ test('browser template follows the active MeshCentral theme', () => {
     assert.match(template, /new MutationObserver\(update\)/);
     assert.match(template, /watchTheme\(\);refresh\(\)/);
     assert.doesNotMatch(template, /prefers-color-scheme/);
+});
+
+test('Queue follows the selected script ID and can show jobs across all scripts', () => {
+    const template = fs.readFileSync(path.join(root, 'views', 'user.handlebars'), 'utf8');
+    const source = template.match(/<script>([\s\S]*?)<\/script>/)[1];
+    const parent = { nodes: [], meshserver: { State: 2, send() {} } };
+    const view = { innerHTML: '' };
+    const browser = vm.createContext({
+        parent, view, window: { parent }, setInterval() {},
+        document: { addEventListener() {} }, uploadInput: { addEventListener() {} }
+    });
+    vm.runInContext(source, browser);
+    vm.runInContext(`
+        draw = function() {};
+        st.data.tree = [{ _id: 'current', type: 'script', name: 'Install' }, { _id: 'second', type: 'script', name: 'Check' }];
+        st.data.queue = [
+            { _id: 'waiting', scriptId: 'current', scriptName: 'Install', node: 'first-device' },
+            { _id: 'old', scriptId: 'old-version', scriptName: 'Install', node: 'old-device' },
+            { _id: 'other', scriptId: 'second', scriptName: 'Check', node: 'check-device' }
+        ];
+        pick('current');
+        queueView();
+    `, browser);
+    assert.match(view.innerHTML, /1 job for Install/);
+    assert.match(view.innerHTML, /first-device/);
+    assert.doesNotMatch(view.innerHTML, /old-device|check-device/);
+
+    vm.runInContext("st.queueIds.add('waiting'); toggleQueueScope(true);", browser);
+    assert.match(view.innerHTML, /3 jobs across all scripts/);
+    assert.match(view.innerHTML, /old-device/);
+    assert.equal(vm.runInContext('st.queueIds.size', browser), 0);
+
+    vm.runInContext("pick('second'); queueView();", browser);
+    assert.match(view.innerHTML, /1 job for Check/);
+    assert.match(view.innerHTML, /check-device/);
+    assert.doesNotMatch(view.innerHTML, /first-device|old-device/);
 });
 
 test('results use contained scrolling, pagination, and collapsed output', () => {

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Known Issues]
 - Please submit issues via [GitHub](https://github.com/maxdorx/MeshCentral-ScriptTask/issues).
 
+## [1.0.12] - 2026-11-23
+### Fixed
+- Filter Queue by the selected script, with an All scripts control for the full fleet queue.
+
 ## [1.0.11] - 2026-11-23
 ### Added
 - Group schedules in Deployments, with per-device results and controls to pause, resume, edit schedules, and retry failed devices.
