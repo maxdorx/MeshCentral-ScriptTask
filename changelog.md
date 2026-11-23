@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Known Issues]
 - Please submit issues via [GitHub](https://github.com/maxdorx/MeshCentral-ScriptTask/issues).
 
+## [1.0.10] - 2026-11-23
+### Added
+- Select individual schedules or all schedules shown and delete them together.
+- Clear all selected devices in the Run tab, including devices hidden by filters.
+
+### Fixed
+- Keep the Select visible device checkbox in sync with the current selection.
+
 ## [1.0.9] - 2026-10-23
 ### Fixed
 - Allow scripts stored directly in Shared to be renamed and deleted.

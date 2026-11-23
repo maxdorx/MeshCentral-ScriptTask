@@ -275,16 +275,31 @@ module.exports.scripttask = function (parent) {
         pluginHandler.scripttask.fitScriptTaskFrame(true);
     };
     
-    obj.queueRun = async function() {
+    // Keep deletion from racing with schedule generation or dispatching a stale queue snapshot.
+    var scheduleWork = Promise.resolve();
+    function withScheduleWork(work) {
+        var operation = scheduleWork.then(work);
+        scheduleWork = operation.catch(function() {});
+        return operation;
+    }
+
+    obj.queueRun = function() {
+        return withScheduleWork(dispatchPendingJobs).then(() => {
+            obj.makeJobsFromSchedules();
+            obj.cleanHistory();
+        }).catch(e => { console.log('PLUGIN: ScriptTask: Queue Run Error: ', e); });
+    };
+
+    function dispatchPendingJobs() {
         var onlineAgents = Object.keys(obj.meshServer.webserver.wsagents);
         //obj.debug('ScriptTask', 'Queue Running', Date().toLocaleString(), 'Online agents: ', onlineAgents);
 
-        obj.db.getPendingJobs(onlineAgents)
+        return obj.db.getPendingJobs(onlineAgents)
         .then((jobs) => {
             if (jobs.length == 0) return;
             //@TODO check for a large number and use taskLimiter to queue the jobs
-            jobs.forEach(job => {
-                obj.db.get(job.scriptId)
+            return Promise.all(jobs.map(job => {
+                return obj.db.get(job.scriptId)
                 .then(async (script) => {
                     if (script.length != 1 || script[0].type != 'script') return;
                     script = script[0];
@@ -331,18 +346,13 @@ module.exports.scripttask = function (parent) {
                     //obj.debug('ScriptTask', 'Sending job to agent');
                     try { 
                         obj.meshServer.webserver.wsagents[job.node].send(JSON.stringify(jObj));
-                        obj.db.update(job._id, { dispatchTime: dispatchTime });
+                        return obj.db.update(job._id, { dispatchTime: dispatchTime });
                     } catch (e) { }
                 })
                 .catch(e => console.log('PLUGIN: ScriptTask: Could not dispatch job.', e));
-            });
-        })
-        .then(() => {
-            obj.makeJobsFromSchedules();
-            obj.cleanHistory();
-        })
-        .catch(e => { console.log('PLUGIN: ScriptTask: Queue Run Error: ', e); });
-    };
+            }));
+        });
+    }
     
     obj.cleanHistory = function() {
         if (Math.round(Math.random() * 100) == 99) {
@@ -622,43 +632,28 @@ module.exports.scripttask = function (parent) {
     };
 
     obj.makeJobsFromSchedules = function(scheduleId) {
-        //obj.debug('ScriptTask', 'makeJobsFromSchedules starting');
-        return obj.db.getSchedulesDueForJob(scheduleId)
-        .then(schedules => {
-            //obj.debug('ScriptTask', 'Found ' + schedules.length + ' schedules to process. Current time is: ' + Math.floor(new Date() / 1000));
-            if (schedules.length) {
-                schedules.forEach(s => {
+        return withScheduleWork(async function() {
+            var schedules = await obj.db.getSchedulesDueForJob(scheduleId);
+            await Promise.all(schedules.map(async function(s) {
+                try {
                     var nextJobTime = obj.determineNextJobTime(s);
-                    var nextJobScheduled = false;
                     if (nextJobTime === null) {
-                        //obj.debug('ScriptTask', 'Removing Job Schedule for', JSON.stringify(s));
-                        obj.db.removeJobSchedule(s._id);
-                    } else {
-                        //obj.debug('ScriptTask', 'Scheduling Job for', JSON.stringify(s));
-                        obj.db.get(s.scriptId)
-                        .then(scripts => {
-                            // if a script is scheduled to run, but a previous run hasn't completed, 
-                            // don't schedule another job for the same (device probably offline).
-                            // results in the minimum jobs running once an agent comes back online.
-                            return obj.db.getIncompleteJobsForSchedule(s._id)
-                            .then((jobs) => {
-                                if (jobs.length > 0) { /* obj.debug('Plugin', 'ScriptTask', 'Skipping job creation'); */ return Promise.resolve(); }
-                                else { /* obj.debug('Plugin', 'ScriptTask', 'Creating new job'); */ nextJobScheduled = true; return obj.db.addJob( { scriptId: s.scriptId, scriptName: scripts[0].name, node: s.node, runBy: s.scheduledBy, dontQueueUntil: nextJobTime, jobSchedule: s._id, domain: s.domain || '' } ); }
-                            });
-                        })
-                        .then(() => {
-                            
-                            if (nextJobScheduled) { /* obj.debug('Plugin', 'ScriptTask', 'Updating nextRun time'); */ return obj.db.update(s._id, { nextRun: nextJobTime }); }
-                            else { /* obj.debug('Plugin', 'ScriptTask', 'NOT updating nextRun time'); */ return Promise.resolve(); }
-                        })
-                        .then(() => {
-                            obj.updateFrontEnd( { scriptId: s.scriptId, nodeId: s.node } );
-                        })
-                        .catch((e) => { console.log('PLUGIN: ScriptTask: Error managing job schedules: ', e); });
+                        await obj.db.removeJobSchedule(s._id);
+                        return;
                     }
-                });
-            }
-        });
+                    var scripts = await obj.db.get(s.scriptId);
+                    // Keep at most one incomplete run per schedule while a device is offline.
+                    var jobs = await obj.db.getIncompleteJobsForSchedule(s._id);
+                    if (jobs.length === 0) {
+                        await obj.db.addJob({ scriptId: s.scriptId, scriptName: scripts[0].name, node: s.node, runBy: s.scheduledBy, dontQueueUntil: nextJobTime, jobSchedule: s._id, domain: s.domain || '' });
+                        await obj.db.update(s._id, { nextRun: nextJobTime });
+                    }
+                    obj.updateFrontEnd({ scriptId: s.scriptId, nodeId: s.node });
+                } catch (e) {
+                    console.log('PLUGIN: ScriptTask: Error managing job schedules: ', e);
+                }
+            }));
+        }).catch(function(e) { console.log('PLUGIN: ScriptTask: Error loading due schedules: ', e); });
     };
     
     obj.cleanName = function(value) {
@@ -724,7 +719,7 @@ module.exports.scripttask = function (parent) {
         function requirePermission(permission, fn) {
             obj.hasPermission(user, permission).then(function(allowed) {
                 if (!allowed) { result(false, 'Permission denied.'); return; }
-                fn();
+                return fn();
             }).catch(fail);
         }
 
@@ -787,12 +782,27 @@ module.exports.scripttask = function (parent) {
             return;
         }
 
-        if (action == 'deleteSchedule') {
-            requirePermission('run', function() {
-                obj.db.getForDomain(command.id, domain).then(function(found) {
-                    if (found.length != 1 || found[0].type != 'jobSchedule') throw new Error('Schedule not found.');
-                    return obj.db.deletePendingJobsForSchedule(found[0]._id).then(function() { return obj.db.delete(found[0]._id); });
-                }).then(function() { result(true, 'Schedule deleted.'); }).catch(fail);
+        if (action == 'deleteSchedule' || action == 'deleteSchedules') {
+            requirePermission('run', async function() {
+                var requested = action == 'deleteSchedule' ? [command.id] : command.ids;
+                if (!Array.isArray(requested) || requested.length === 0 || requested.some(function(id) { return typeof id !== 'string' || !id; })) {
+                    throw new Error('Select at least one valid schedule.');
+                }
+                var ids = Array.from(new Set(requested));
+                var deleted = await withScheduleWork(async function() {
+                    var schedules = await obj.db.getJobSchedulesByIds(ids, domain);
+                    var visible = await obj.filterVisibleRows(user, schedules);
+                    var scheduleIds = visible.map(function(schedule) { return schedule._id; });
+                    if (!scheduleIds.length) return 0;
+                    await obj.db.deletePendingJobsForSchedules(scheduleIds);
+                    var removal = await obj.db.deleteJobSchedules(scheduleIds, domain);
+                    return removal.deletedCount;
+                });
+                if (!deleted) { result(false, ids.length === 1 ? 'Schedule not found.' : 'No selected schedules were available to delete.'); return; }
+                var skipped = ids.length - deleted;
+                var message = deleted === 1 ? '1 schedule deleted.' : deleted + ' schedules deleted.';
+                if (skipped) message += ' ' + skipped + (skipped === 1 ? ' schedule was' : ' schedules were') + ' unavailable.';
+                result(true, message);
             });
             return;
         }

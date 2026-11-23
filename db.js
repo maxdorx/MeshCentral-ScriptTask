@@ -223,11 +223,21 @@ module.exports.CreateDB = function(meshserver) {
         obj.getJobSchedules = function(domain) {
             return obj.scriptFile.find(obj.withDomain({ type: 'jobSchedule' }, domain)).sort({ startAt: -1 }).toArray();
         };
+        obj.getJobSchedulesByIds = function(ids, domain) {
+            var query = { type: 'jobSchedule', _id: { $in: ids.map(function(id) { return formatId(id); }) } };
+            return obj.scriptFile.find(obj.withDomain(query, domain)).toArray();
+        };
         obj.getIncompleteJobsForSchedule = function (schedId) {
             return obj.scriptFile.find( { type: 'job', jobSchedule: schedId, completeTime: null } ).toArray();
         };
         obj.deletePendingJobsForSchedule = function (schedId) {
-            return obj.scriptFile.deleteMany( { type: 'job', jobSchedule: schedId, completeTime: null } );
+            return obj.deletePendingJobsForSchedules([schedId]);
+        };
+        obj.deletePendingJobsForSchedules = function(ids) {
+            return obj.scriptFile.deleteMany({ type: 'job', jobSchedule: { $in: ids }, completeTime: null });
+        };
+        obj.deleteJobSchedules = function(ids, domain) {
+            return obj.scriptFile.deleteMany(obj.withDomain({ type: 'jobSchedule', _id: { $in: ids } }, domain));
         };
         obj.deleteOldHistory = function() {
             var nowTime = Math.floor(new Date() / 1000);
@@ -319,11 +329,8 @@ module.exports.CreateDB = function(meshserver) {
           });
           
           
-          if (typeof require('mongodb').ObjectID == 'function') {
-              formatId = require('mongodb').ObjectID;
-          } else {
-              formatId = require('mongodb').ObjectId;
-          }
+          var ObjectId = require('mongodb').ObjectId || require('mongodb').ObjectID;
+          formatId = function(id) { return id instanceof ObjectId ? id : new ObjectId(id); };
           obj.initFunctions();
     });  
     } else { // use NeDb
